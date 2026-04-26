@@ -312,7 +312,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
 
   <input id="importInput" class="hiddenInput" type="file" accept=".zip,application/zip" onchange="importZip(event)">
   <input id="folderInput" class="hiddenInput" type="file" multiple webkitdirectory directory onchange="importFolderBackup(event)">
-  <input id="backupFilesInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,.png,image/*" onchange="importBackupFiles(event)">
+  
 </div>
 
 <div id="imgModal">
@@ -766,7 +766,7 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Load data from your backup folder</p></div>
         </div>
-        <div class="hint">ⓘ Unzip your backup first. Then select/open the backup folder that contains backup.json and the images folder. PNG/JPG both work. PNG/JPG both work.</div>
+        <div class="hint">ⓘ Unzip your backup first. Go inside/select the unzipped backup folder, then press Open/Upload. It should contain backup.json and the images folder. PNG/JPG both work. PNG/JPG both work.</div>
         <button class="importBtn" onclick="$('folderInput').click()">↥ Import</button>
       </div>
     </div>
@@ -840,85 +840,6 @@ function findImageFile(imageMap, imgRef){
   }
 
   return null;
-}
-
-async function importBackupFiles(event){
-  let files=Array.from(event.target.files||[]);
-  event.target.value="";
-  if(!files.length) return;
-
-  showLoading();
-  try{
-    let jsonFile=files.find(f=>f.name==="backup.json" || f.name.endsWith(".json"));
-    if(!jsonFile){
-      hideLoading();
-      alert("Please select backup.json together with the image files");
-      return;
-    }
-
-    let parsed=JSON.parse(await jsonFile.text());
-    if(!parsed.data || !Array.isArray(parsed.data)){
-      hideLoading();
-      alert("Invalid backup.json");
-      return;
-    }
-
-    let imageMap={};
-    files.forEach(f=>{
-      if(!f.name.endsWith(".json")){
-        imageMap[f.name]=f;
-        imageMap[f.webkitRelativePath]=f;
-        imageMap["images/"+f.name]=f;
-      }
-    });
-
-    let tx=db.transaction("data","readwrite");
-    let store=tx.objectStore("data");
-    let count=0, missing=0;
-
-    for(let item of parsed.data){
-      let importedImgs=[];
-
-      for(let imgRef of (item.imgs||[])){
-        // If old backup already contains base64 image, keep it
-        if(typeof imgRef==="string" && imgRef.startsWith("data:image")){
-          importedImgs.push(imgRef);
-          continue;
-        }
-
-        let file=findImageFile(imageMap, imgRef);
-
-        if(!file){
-          missing++;
-          continue;
-        }
-
-        importedImgs.push(await fileToDataURL(file));
-      }
-
-      store.add({
-        dx:item.dx||"Untitled",
-        one:item.one||"",
-        con:item.con||"",
-        note:item.note||"",
-        fav:item.fav||false,
-        imgs:importedImgs
-      });
-      count++;
-    }
-
-    tx.oncomplete=()=>loadAll(()=>{
-      hideLoading();
-      goHome();
-      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records with images successfully`);
-    });
-    tx.onerror=()=>{hideLoading();alert("Database error during import");};
-
-  }catch(err){
-    console.error(err);
-    hideLoading();
-    alert("Import failed. Select backup.json and the image files together.");
-  }
 }
 
 async function importFolderBackup(event){
