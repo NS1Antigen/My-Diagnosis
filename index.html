@@ -310,7 +310,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
   
-  <input id="folderInput" class="hiddenInput" type="file" multiple accept=".json,.png,image/png" onchange="importFolderBackup(event)">
+  <input id="folderInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,image/jpeg" onchange="importFolderBackup(event)">
 </div>
 
 <div id="imgModal">
@@ -764,7 +764,7 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Load data from your backup folder</p></div>
         </div>
-        <div class="hint">ⓘ Unzip your backup first. Go inside the unzipped backup folder, then press Open/Upload. Select backup.json and PNG images only. The app will look for backup.json and image files from that selection. PNG/JPG both work. It should contain backup.json and the images folder. PNG/JPG both work. PNG/JPG both work.</div>
+        <div class="hint">ⓘ Unzip your backup first. Go inside the unzipped backup folder, then press Open/Upload. Select backup.json and JPEG/JPG images only. The app will look for backup.json and image files from that selection. PNG/JPG both work. It should contain backup.json and the images folder. PNG/JPG both work. PNG/JPG both work.</div>
         <button class="importBtn" onclick="$('folderInput').click()">↥ Import</button>
       </div>
     </div>
@@ -822,8 +822,10 @@ function findImageFile(imageMap, imgRef){
   let candidates=[
     ref,
     clean,
-    base+".png",
-    "images/"+base+".png",
+    base+".jpg",
+    base+".jpeg",
+    "images/"+base+".jpg",
+    "images/"+base+".jpeg",
     "images/"+clean
   ];
 
@@ -855,7 +857,7 @@ async function importFolderBackup(event){
 
     if(!jsonFile){
       hideLoading();
-      alert("No backup.json found. Open the unzipped backup folder and select/upload backup.json with PNG images.");
+      alert("No backup.json found. Open the unzipped backup folder and select/upload backup.json with JPEG/JPG images.");
       return;
     }
 
@@ -873,9 +875,9 @@ async function importFolderBackup(event){
       let rel=f.webkitRelativePath || "";
       let name=f.name || "";
 
-      // Import images: PNG only
+      // Import images: JPEG/JPG only
       if(name.toLowerCase().endsWith(".json")) return;
-      if(!name.toLowerCase().endsWith(".png")) return;
+      if(!name.toLowerCase().endsWith(".jpg") && !name.toLowerCase().endsWith(".jpeg")) return;
 
       let clean=name.split("/").pop();
 
@@ -950,7 +952,7 @@ async function importFolderBackup(event){
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Import failed. Open the unzipped backup folder and select/upload backup.json with PNG images.");
+    alert("Import failed. Open the unzipped backup folder and select/upload backup.json with JPEG/JPG images.");
   }
 }
 
