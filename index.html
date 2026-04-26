@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Clinical Tool</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<!-- PWA REQUIRED -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#007aff">
+
+<style>
+:root{
+  --bg:#f6f8fb;
+  --card:#ffffff;
+  --text:#0f172a;
+  --muted:#526581;
+  --blue:#087cff;
+  --blue2:#0a6df0;
+  --line:#dbe5f0;
+  --shadow:0 4px 14px rgba(15,23,42,.08);
+  --radius:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--text)}
+button,input,textarea{font-family:inherit}
+button{border:none;cursor:pointer}
+#app{position:relative;width:100%;height:100%;overflow:hidden;background:var(--bg)}
+.screen{
+  position:absolute;
+  inset:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-bottom:105px;
+  background:var(--bg);
+  opacity:0;
+  transform:translateY(14px);
+  pointer-events:none;
+  transition:opacity .22s ease, transform .22s ease;
+}
+.screen.active{opacity:1;transform:translateY(0);pointer-events:auto}
+.header{
+  background:linear-gradient(135deg,#1684ff,#0c6ff1);
+  color:white;
+  padding:58px 24px 38px;
+}
+.brandRow{display:flex;align-items:center;gap:14px}
+.logo{
+  width:52px;height:52px;border-radius:18px;background:rgba(255,255,255,.18);
+  display:flex;align-items:center;justify-content:center;font-size:26px
+}
+.brandSmall{font-size:14px;opacity:.8;letter-spacing:.4px}
+.headerTitle{font-size:25px;font-weight:800;line-height:1.1}
+.headerCount{font-size:18px;margin-top:18px;opacity:.95}
+.empty{
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  margin-top:120px;padding:0 24px
+}
+.emptyIcon{
+  width:80px;height:80px;border-radius:28px;background:#e6f5ff;color:#0067cc;
+  display:flex;align-items:center;justify-content:center;font-size:38px;margin-bottom:20px
+}
+.empty h3{font-size:21px;margin:0 0 8px;font-weight:800}
+.empty p{margin:0 0 26px;color:var(--muted);font-size:17px}
+.primaryBtn{
+  background:var(--blue);color:white;border-radius:13px;padding:14px 24px;
+  font-size:17px;font-weight:650;box-shadow:0 5px 14px rgba(8,124,255,.3)
+}
+.homeList{padding:18px 18px 0;display:flex;flex-direction:column;gap:14px}
+.dxCard{
+  background:var(--card);border:1px solid var(--line);border-radius:18px;
+  padding:20px 20px;box-shadow:var(--shadow);position:relative;min-height:130px
+}
+.dxCardTitle{font-size:20px;font-weight:800;margin-bottom:14px;padding-right:30px}
+.cardArrow{position:absolute;right:20px;top:28px;color:#617089;font-size:30px}
+.tags{display:flex;flex-wrap:wrap;gap:10px}
+.tag{font-size:14px;padding:6px 12px;border-radius:999px}
+.tag.one{background:#dbeafe;color:#045bd8}
+.tag.con{background:#efe4ff;color:#6b21d8}
+.tag.note{background:#fff3c4;color:#a16207}
+.tag.img{background:#d9fae8;color:#047857}
+.previewText{margin-top:12px;color:#526581;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:85%}
+.topbar{
+  height:74px;background:var(--bg);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;padding:0 16px;position:sticky;top:0;z-index:5
+}
+.topTitle{font-size:20px;font-weight:800;position:absolute;left:72px;right:72px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconBtn{
+  width:44px;height:44px;border-radius:14px;background:transparent;color:#132033;
+  display:flex;align-items:center;justify-content:center;font-size:26px
+}
+.iconBtn.edit{color:#64748b}
+.iconBtn.delete{color:#ff2d55}
+.saveBtn{
+  height:44px;padding:0 18px;border-radius:14px;background:var(--blue);color:white;
+  font-size:17px;font-weight:700;box-shadow:0 4px 12px rgba(8,124,255,.25)
+}
+.detailWrap{padding:20px}
+.infoCard{
+  border-radius:18px;border:1px solid var(--line);padding:22px 20px;margin-bottom:20px;
+  font-size:18px;line-height:1.5;white-space:pre-wrap;word-break:break-word
+}
+.infoCard.dx{background:#eaf5ff;border-color:#acd2ff;font-size:24px;font-weight:800}
+.infoCard.one{background:#edf6ff}
+.infoCard.con{background:#f4efff}
+.infoCard.note{background:#fffbea}
+.infoCard.attach{background:#ecfff5}
+.sectionTitle{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:800;margin-bottom:18px}
+.bubble{
+  width:34px;height:34px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:17px
+}
+.one .bubble{background:#dbeafe;color:#0b76ff}
+.con .bubble{background:#eadcff;color:#7c3aed}
+.note .bubble{background:#fff2bf;color:#f59e0b}
+.attach .bubble{background:#d5f9e8;color:#10b981}
+.mutedItalic{color:#526581;font-style:italic}
+.imgGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.imgGrid img,.formImg{
+  width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:14px;border:1px solid var(--line)
+}
+.form{padding:24px 8px 20px}
+.field{margin:0 0 26px}
+label{display:block;font-size:18px;font-weight:800;margin-bottom:12px}
+.req{color:#ef4444}
+input,textarea{
+  width:100%;border:1px solid var(--line);background:white;border-radius:13px;
+  padding:14px 16px;font-size:17px;color:var(--text);box-shadow:0 2px 8px rgba(15,23,42,.04);outline:none
+}
+textarea{min-height:122px;resize:vertical}
+input:focus,textarea:focus{border-color:#9bc8ff;box-shadow:0 0 0 3px rgba(8,124,255,.12)}
+.dropBox{
+  border:2px dashed #d7e3f0;border-radius:20px;background:#fbfdff;min-height:155px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#526581;
+  padding:18px
+}
+.dropIcon{width:60px;height:60px;border-radius:22px;background:#e6f5ff;color:#087cff;display:flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:12px}
+.hiddenInput{display:none}
+.formImgs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.imgBox{position:relative}
+.removeImg{
+  position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;
+  background:#ff3b30;color:white;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.2)
+}
+.searchPage,.transferPage{padding:22px}
+.pageTitle{font-size:31px;font-weight:850;margin:40px 0 20px}
+.searchBoxWrap{position:relative;margin-bottom:34px}
+.searchIcon{position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:24px;color:#64748b}
+.searchInput{height:62px;border-radius:20px;border:3px solid #add4ff;padding-left:54px;font-size:18px;background:white}
+.searchEmpty{text-align:center;margin-top:95px;color:#526581;font-size:18px}
+.searchEmpty .big{font-size:56px;opacity:.35;margin-bottom:8px}
+.transferHead{display:flex;align-items:center;gap:16px;margin:58px 0 32px}
+.transferHeadIcon{width:38px;height:38px;border-radius:14px;background:#e6f5ff;color:#087cff;display:flex;align-items:center;justify-content:center;font-size:22px}
+.transferTitle{font-size:31px;font-weight:850}
+.transferSub{color:#526581;margin-top:4px}
+.stats{
+  display:grid;grid-template-columns:1fr 1fr;background:white;border:1px solid var(--line);
+  border-radius:20px;padding:26px 0;margin-bottom:20px
+}
+.stat{text-align:center}
+.stat:first-child{border-right:1px solid var(--line)}
+.statNum{font-size:38px;font-weight:850;color:#087cff}
+.statLabel{color:#526581;font-size:16px;margin-top:4px}
+.transferCard{background:white;border:1px solid var(--line);border-radius:20px;padding:26px;margin-bottom:20px}
+.transferCardHead{display:flex;gap:16px;align-items:flex-start;margin-bottom:18px}
+.squareIcon{width:45px;height:45px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:24px}
+.squareIcon.export{background:#dbeafe;color:#087cff}
+.squareIcon.import{background:#d8fbe8;color:#08a967}
+.transferCard h3{font-size:22px;margin:0}
+.transferCard p{color:#526581;margin:3px 0 0}
+.hint{background:#e9eef5;color:#445b78;border-radius:13px;padding:14px 16px;line-height:1.35;margin-bottom:20px}
+.exportBtn{width:100%;height:55px;border-radius:13px;background:#73b7ff;color:white;font-size:18px;font-weight:750}
+.importBtn{width:100%;height:58px;border-radius:13px;border:2px dashed #4ade80;background:#effdf5;color:#047857;font-size:18px;font-weight:750}
+.nav{
+  position:fixed;left:0;right:0;bottom:0;height:94px;background:white;border-top:1px solid var(--line);
+  display:grid;grid-template-columns:1fr 1fr 1fr 1fr;align-items:center;z-index:50;padding-bottom:env(safe-area-inset-bottom)
+}
+.navItem{
+  height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:#64748b;font-size:13px;gap:4px
+}
+.navItem.active{color:#087cff}
+.navIcon{font-size:28px;line-height:1}
+.fabWrap{position:relative;height:70px;display:flex;align-items:flex-end;justify-content:center;color:#64748b;font-size:13px;padding-bottom:8px}
+.fab{
+  position:absolute;top:-42px;left:50%;transform:translateX(-50%);
+  width:70px;height:70px;border-radius:18px;background:#087cff;color:white;
+  display:flex;align-items:center;justify-content:center;font-size:40px;
+  box-shadow:0 8px 20px rgba(8,124,255,.35)
+}
+#imgModal{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:2000;
+  justify-content:center;align-items:center;flex-direction:column;padding:18px
+}
+#fullImg{max-width:100%;max-height:78%;border-radius:10px}
+.modalBtn{width:100%;max-width:320px;padding:13px;border-radius:12px;color:white;font-size:16px;margin-top:12px}
+.modalDelete{background:#ff3b30}.modalClose{background:#475569}
+#loading{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3000;
+  justify-content:center;align-items:center;color:white;font-size:20px
+}
+
+body.dark{
+  --bg:#111827;
+  --card:#1f2937;
+  --text:#f9fafb;
+  --muted:#cbd5e1;
+  --line:#334155;
+  --shadow:0 4px 14px rgba(0,0,0,.35);
+}
+body.dark .screen,
+body.dark #app{background:var(--bg)}
+body.dark input,
+body.dark textarea,
+body.dark .searchInput,
+body.dark .dropBox{background:#172033;color:var(--text);border-color:#334155}
+body.dark .nav,
+body.dark .topbar,
+body.dark .dxCard,
+body.dark .transferCard,
+body.dark .stats{background:#1f2937;border-color:#334155}
+body.dark .hint{background:#334155;color:#dbeafe}
+body.dark .infoCard.dx{background:#12304f}
+body.dark .infoCard.one{background:#102a44}
+body.dark .infoCard.con{background:#2d2148}
+body.dark .infoCard.note{background:#3a3217}
+body.dark .infoCard.attach{background:#12372b}
+.themeToggle{
+  width:46px;
+  height:42px;
+  border-radius:13px;
+  background:white;
+  border:1px solid var(--line);
+  color:#087cff;
+  font-size:21px;
+  box-shadow:0 2px 8px rgba(15,23,42,.04);
+}
+body.dark .themeToggle{background:#1f2937;border-color:#334155;color:#facc15}
+
+
+.homeToolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:16px 18px 0;
+  gap:10px;
+}
+.toolbarBtn{
+  border-radius:13px;
+  padding:10px 14px;
+  background:white;
+  border:1px solid var(--line);
+  color:#087cff;
+  font-size:15px;
+  font-weight:750;
+  box-shadow:0 2px 8px rgba(15,23,42,.04);
+}
+.toolbarBtn.danger{color:#ef4444}
+.toolbarBtn.fillDanger{background:#ef4444;color:white;border-color:#ef4444}
+.selectCircle{
+  position:absolute;
+  right:18px;
+  top:18px;
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  border:2px solid #94a3b8;
+  background:white;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:white;
+  font-size:18px;
+  font-weight:900;
+}
+.dxCard.selected{
+  border-color:#087cff;
+  box-shadow:0 0 0 3px rgba(8,124,255,.12), var(--shadow);
+}
+.dxCard.selected .selectCircle{
+  background:#087cff;
+  border-color:#087cff;
+}
+body.dark .toolbarBtn,
+body.dark .selectCircle{background:#1f2937;border-color:#334155}
+
+</style>
+</head>
+
+<body>
+<div id="app">
+  <div id="homeScreen" class="screen active"></div>
+  <div id="searchScreen" class="screen"></div>
+  <div id="formScreen" class="screen"></div>
+  <div id="detailScreen" class="screen"></div>
+  <div id="transferScreen" class="screen"></div>
+
+  <div class="nav">
+    <button class="navItem" id="navHome" onclick="goHome()"><div class="navIcon">⌂</div><div>Home</div></button>
+    <button class="navItem" id="navSearch" onclick="goSearch()"><div class="navIcon">⌕</div><div>Search</div></button>
+    <div class="fabWrap">
+      <button class="fab" onclick="openNewForm()">+</button>
+      <div>New</div>
+    </div>
+    <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
+  </div>
+
+  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,image/*" onchange="importSelectedFiles(event)">
+</div>
+
+<div id="imgModal">
+  <img id="fullImg">
+  <button class="modalBtn modalDelete" onclick="confirmDeleteImage()">🗑 Delete Image</button>
+  <button class="modalBtn modalClose" onclick="closeImg()">Close</button>
+</div>
+
+<div id="loading">⏳ Working...</div>
+
+<script>
+let db, data=[], deleted=[];
+let tempImage=[], currentIndex=null, currentImgIndex=null, currentMode="new";
+let selectMode=false, selectedIds=new Set();
+
+function applySavedTheme(){
+  let theme=localStorage.getItem("theme") || "light";
+  document.body.classList.toggle("dark", theme==="dark");
+  let btn=document.getElementById("themeToggle");
+  if(btn) btn.textContent = theme==="dark" ? "☀️" : "🌙";
+}
+function toggleTheme(){
+  let dark=!document.body.classList.contains("dark");
+  document.body.classList.toggle("dark", dark);
+  localStorage.setItem("theme", dark ? "dark" : "light");
+  applySavedTheme();
+}
+applySavedTheme();
+
+function $(id){return document.getElementById(id)}
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]));
+}
+function setActiveNav(name){
+  ["navHome","navSearch","navTransfer"].forEach(id=>$(id)?.classList.remove("active"));
+  if(name) $("nav"+name)?.classList.add("active");
+}
+function showScreen(id, navName=null){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  $(id).classList.add("active");
+  setActiveNav(navName);
+}
+function showLoading(){ $("loading").style.display="flex"; }
+function hideLoading(){ $("loading").style.display="none"; }
+
+let request=indexedDB.open("clinicalDB",1);
+request.onupgradeneeded=e=>{
+  db=e.target.result;
+  if(!db.objectStoreNames.contains("data")) db.createObjectStore("data",{keyPath:"id",autoIncrement:true});
+  if(!db.objectStoreNames.contains("deleted")) db.createObjectStore("deleted",{keyPath:"id",autoIncrement:true});
+};
+request.onsuccess=e=>{
+  db=e.target.result;
+  loadAll(()=>goHome());
+};
+request.onerror=()=>alert("Database failed to open");
+
+function loadAll(callback){
+  let tx=db.transaction(["data","deleted"],"readonly");
+  tx.objectStore("data").getAll().onsuccess=e=>{
+    data=e.target.result || [];
+    // Convert old img to imgs
+    let fixTx=db.transaction("data","readwrite");
+    let store=fixTx.objectStore("data");
+    data.forEach(d=>{
+      if(d.img && !d.imgs){
+        d.imgs=[d.img];
+        delete d.img;
+        store.put(d);
+      }
+      if(!Array.isArray(d.imgs)) d.imgs=[];
+    });
+    if(callback) callback();
+  };
+  tx.objectStore("deleted").getAll().onsuccess=e=>{
+    deleted=e.target.result || [];
+  };
+}
+
+function countImages(){
+  return data.reduce((sum,d)=>sum+(Array.isArray(d.imgs)?d.imgs.length:0),0);
+}
+
+function goHome(){
+  showScreen("homeScreen","Home");
+  renderHome();
+}
+function goSearch(){
+  showScreen("searchScreen","Search");
+  renderSearch();
+}
+function goTransfer(){
+  showScreen("transferScreen","Transfer");
+  renderTransfer();
+}
+
+function renderHome(){
+  let countText=data.length===1 ? "1 saved record" : `${data.length} saved records`;
+  let toolbar = data.length ? `
+    <div class="homeToolbar">
+      ${
+        selectMode ? `
+          <button class="toolbarBtn" onclick="cancelSelectMode()">Cancel</button>
+          <button class="toolbarBtn" onclick="toggleSelectAll()">${selectedIds.size===data.length ? "Unselect all" : "Select all"}</button>
+          <button class="toolbarBtn fillDanger" onclick="deleteSelected()">Delete (${selectedIds.size})</button>
+        ` : `
+          <span></span>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button id="themeToggle" class="themeToggle" onclick="toggleTheme()">🌙</button>
+            <button class="toolbarBtn" onclick="enterSelectMode()">Select</button>
+          </div>
+        `
+      }
+    </div>
+  ` : `
+    <div class="homeToolbar">
+      <span></span>
+      <button id="themeToggle" class="themeToggle" onclick="toggleTheme()">🌙</button>
+    </div>
+  `;
+
+  $("homeScreen").innerHTML=`
+    <div class="header">
+      <div class="brandRow">
+        <div class="logo">🩺</div>
+        <div>
+          <div class="brandSmall">MEDDX</div>
+          <div class="headerTitle">My Diagnoses</div>
+        </div>
+      </div>
+      <div class="headerCount">${countText}</div>
+    </div>
+    ${
+      data.length===0 ? `
+      <div class="empty">
+        <div class="emptyIcon">🩺</div>
+        <h3>No diagnoses yet</h3>
+        <p>Tap the + button to add your first</p>
+        <button class="primaryBtn" onclick="openNewForm()">＋ New Diagnosis</button>
+      </div>` :
+      `${toolbar}<div class="homeList">${data.map((d,i)=>diagnosisCard(d,i)).join("")}</div>`
+    }
+  `;
+  applySavedTheme();
+}
+
+function diagnosisCard(d,i){
+  let tags=[];
+  if((d.one||"").trim()) tags.push(`<span class="tag one">One-Day</span>`);
+  if((d.con||"").trim()) tags.push(`<span class="tag con">Continuous</span>`);
+  if((d.note||"").trim()) tags.push(`<span class="tag note">Notes</span>`);
+  if((d.imgs||[]).length) tags.push(`<span class="tag img">Attachments</span>`);
+  let preview=(d.one||d.con||d.note||"").trim();
+  let selected=selectedIds.has(d.id);
+  return `
+    <div class="dxCard ${selected ? "selected" : ""}" onclick="${selectMode ? `toggleSelectDiagnosis(${d.id})` : `openDetail(${i})`}">
+      ${selectMode ? `<div class="selectCircle">${selected ? "✓" : ""}</div>` : `<div class="cardArrow">›</div>`}
+      <div class="dxCardTitle">${escapeHtml(d.dx || "Untitled")}</div>
+      <div class="tags">${tags.join("") || `<span class="tag one">Empty</span>`}</div>
+      ${preview ? `<div class="previewText">${escapeHtml(preview)}</div>` : ""}
+    </div>
+  `;
+}
+
+function enterSelectMode(){
+  selectMode=true;
+  selectedIds.clear();
+  renderHome();
+}
+function cancelSelectMode(){
+  selectMode=false;
+  selectedIds.clear();
+  renderHome();
+}
+function toggleSelectDiagnosis(id){
+  if(selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  renderHome();
+}
+function toggleSelectAll(){
+  if(selectedIds.size===data.length) selectedIds.clear();
+  else data.forEach(d=>selectedIds.add(d.id));
+  renderHome();
+}
+function deleteSelected(){
+  if(selectedIds.size===0){
+    alert("No diagnosis selected");
+    return;
+  }
+  if(!confirm(`Permanently delete ${selectedIds.size} selected diagnosis record(s)? This cannot be undone.`)) return;
+
+  let tx=db.transaction("data","readwrite");
+  let dataStore=tx.objectStore("data");
+
+  data.filter(d=>selectedIds.has(d.id)).forEach(d=>{
+    dataStore.delete(d.id);
+  });
+
+  tx.oncomplete=()=>{
+    selectMode=false;
+    selectedIds.clear();
+    loadAll(()=>goHome());
+  };
+  tx.onerror=()=>alert("Delete failed");
+}
+
+function openDetail(i){
+  currentIndex=i;
+  showScreen("detailScreen",null);
+  renderDetail();
+}
+function renderDetail(){
+  let d=data[currentIndex];
+  if(!d){goHome();return;}
+  let imgs=d.imgs||[];
+  $("detailScreen").innerHTML=`
+    <div class="topbar">
+      <button class="iconBtn" onclick="goHome()">‹</button>
+      <div class="topTitle">${escapeHtml(d.dx || "Diagnosis")}</div>
+      <div style="display:flex;gap:6px">
+        <button class="iconBtn edit" onclick="openEditForm()">✎</button>
+        <button class="iconBtn delete" onclick="deleteCurrent()">♲</button>
+      </div>
+    </div>
+    <div class="detailWrap">
+      <div class="infoCard dx">${escapeHtml(d.dx || "-")}</div>
+      <div class="infoCard one">
+        <div class="sectionTitle"><span class="bubble">▣</span>One-Day Order</div>
+        ${escapeHtml(d.one || "-")}
+      </div>
+      <div class="infoCard con">
+        <div class="sectionTitle"><span class="bubble">↻</span>Continuous Order</div>
+        ${escapeHtml(d.con || "-")}
+      </div>
+      <div class="infoCard note">
+        <div class="sectionTitle"><span class="bubble">▢</span>Notes</div>
+        ${escapeHtml(d.note || "-")}
+      </div>
+      <div class="infoCard attach">
+        <div class="sectionTitle"><span class="bubble">▧</span>Attachments</div>
+        ${
+          imgs.length ? `<div class="imgGrid">${imgs.map((img,idx)=>`<img src="${img}" onclick="openImg(${idx})">`).join("")}</div>` :
+          `<div class="mutedItalic">No attachments</div>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function openNewForm(){
+  currentMode="new";
+  currentIndex=null;
+  tempImage=[];
+  renderForm();
+  showScreen("formScreen",null);
+}
+function openEditForm(){
+  if(currentIndex===null) return;
+  currentMode="edit";
+  let d=data[currentIndex];
+  tempImage=[...(d.imgs||[])];
+  renderForm(d);
+  showScreen("formScreen",null);
+}
+function renderForm(d={}){
+  $("formScreen").innerHTML=`
+    <div class="topbar">
+      <button class="iconBtn" onclick="${currentMode==='edit' ? 'openDetail(currentIndex)' : 'goHome()'}">‹</button>
+      <div class="topTitle">${currentMode==="edit" ? "Edit Diagnosis" : "New Diagnosis"}</div>
+      <button class="saveBtn" onclick="saveAndBack()">▣ Save</button>
+    </div>
+    <div class="form">
+      <div class="field">
+        <label>Diagnosis Name <span class="req">*</span></label>
+        <input id="dx" placeholder="e.g. Acute Tonsillitis" value="${escapeHtml(d.dx||"")}">
+      </div>
+      <div class="field">
+        <label>One-Day Order</label>
+        <textarea id="one" placeholder="Write one-day orders here...">${escapeHtml(d.one||"")}</textarea>
+      </div>
+      <div class="field">
+        <label>Continuous Order</label>
+        <textarea id="con" placeholder="Write continuous orders here...">${escapeHtml(d.con||"")}</textarea>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="note" placeholder="Additional notes...">${escapeHtml(d.note||"")}</textarea>
+      </div>
+      <div class="field">
+        <label>Attachments</label>
+        <div class="dropBox" onclick="$('photoInput').click()">
+          <div class="dropIcon">▧</div>
+          <div style="font-size:18px;color:#111827;margin-bottom:6px">Add photos</div>
+          <div>Tap to browse or drag & drop</div>
+        </div>
+        <input id="photoInput" class="hiddenInput" type="file" accept="image/*" multiple onchange="uploadImage(event)">
+        <div id="formImgs" class="formImgs"></div>
+      </div>
+    </div>
+  `;
+  renderFormImages();
+}
+
+function uploadImage(e){
+  let files=Array.from(e.target.files||[]);
+  if(!files.length) return;
+  let done=0;
+  files.forEach(file=>{
+    let reader=new FileReader();
+    reader.onload=ev=>{
+      tempImage.push(ev.target.result);
+      done++;
+      if(done===files.length) renderFormImages();
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value="";
+}
+function renderFormImages(){
+  let box=$("formImgs");
+  if(!box) return;
+  box.innerHTML=tempImage.map((img,idx)=>`
+    <div class="imgBox">
+      <img class="formImg" src="${img}">
+      <button class="removeImg" onclick="removeTempImage(${idx})">×</button>
+    </div>
+  `).join("");
+}
+function removeTempImage(idx){
+  tempImage.splice(idx,1);
+  renderFormImages();
+}
+function saveAndBack(){
+  let diagnosis=$("dx").value.trim();
+  if(!diagnosis){alert("Please enter diagnosis name");return;}
+  let obj={
+    dx:diagnosis,
+    one:$("one").value,
+    con:$("con").value,
+    note:$("note").value,
+    imgs:[...tempImage],
+    fav:false
+  };
+  if(currentMode==="edit" && currentIndex!==null){
+    obj.id=data[currentIndex].id;
+    obj.fav=data[currentIndex].fav || false;
+    let tx=db.transaction("data","readwrite");
+    tx.objectStore("data").put(obj);
+    tx.oncomplete=()=>{
+      loadAll(()=>{
+        currentIndex=data.findIndex(x=>x.id===obj.id);
+        renderDetail();
+        showScreen("detailScreen",null);
+      });
+    };
+  }else{
+    let tx=db.transaction("data","readwrite");
+    let req=tx.objectStore("data").add(obj);
+    req.onsuccess=e=>{ obj.id=e.target.result; };
+    tx.oncomplete=()=>loadAll(()=>goHome());
+  }
+}
+
+function deleteCurrent(){
+  if(currentIndex===null) return;
+  let d=data[currentIndex];
+  if(!confirm(`Permanently delete "${d.dx}"? This cannot be undone.`)) return;
+
+  let tx=db.transaction("data","readwrite");
+  tx.objectStore("data").delete(d.id);
+  tx.oncomplete=()=>loadAll(()=>goHome());
+  tx.onerror=()=>alert("Delete failed");
+}
+
+function openImg(idx){
+  currentImgIndex=idx;
+  let d=data[currentIndex];
+  $("fullImg").src=(d.imgs||[])[idx];
+  $("imgModal").style.display="flex";
+}
+function closeImg(){
+  $("imgModal").style.display="none";
+  currentImgIndex=null;
+}
+function confirmDeleteImage(){
+  if(currentIndex===null || currentImgIndex===null) return;
+  if(!confirm("Delete this image from this diagnosis?")) return;
+  let d={...data[currentIndex]};
+  d.imgs=[...(d.imgs||[])];
+  d.imgs.splice(currentImgIndex,1);
+  let tx=db.transaction("data","readwrite");
+  tx.objectStore("data").put(d);
+  tx.oncomplete=()=>loadAll(()=>{
+    currentIndex=data.findIndex(x=>x.id===d.id);
+    closeImg();
+    renderDetail();
+  });
+}
+
+function renderSearch(){
+  $("searchScreen").innerHTML=`
+    <div class="searchPage">
+      <div class="pageTitle">Search</div>
+      <div class="searchBoxWrap">
+        <div class="searchIcon">⌕</div>
+        <input id="searchInput" class="searchInput" placeholder="Search by name, ID, diagnosis..." onfocus="showSearchResults()" oninput="showSearchResults()">
+      </div>
+      <div id="searchResults">
+        <div class="searchEmpty"><div class="big">⌕</div>Start typing to search diagnoses</div>
+      </div>
+    </div>
+  `;
+}
+function showSearchResults(){
+  let q=($("searchInput").value||"").toLowerCase().trim();
+  let results=data
+    .map((d,i)=>({d,i}))
+    .filter(x=>{
+      if(!q) return true;
+      return String(x.d.id||"").includes(q) ||
+        (x.d.dx||"").toLowerCase().includes(q) ||
+        (x.d.one||"").toLowerCase().includes(q) ||
+        (x.d.con||"").toLowerCase().includes(q) ||
+        (x.d.note||"").toLowerCase().includes(q);
+    });
+  $("searchResults").innerHTML=results.length ?
+    `<div class="homeList">${results.map(x=>diagnosisCard(x.d,x.i)).join("")}</div>` :
+    `<div class="searchEmpty"><div class="big">⌕</div>No results found</div>`;
+}
+
+function renderTransfer(){
+  $("transferScreen").innerHTML=`
+    <div class="transferPage">
+      <div class="transferHead">
+        <div class="transferHeadIcon">⇪</div>
+        <div>
+          <div class="transferTitle">Transfer Data</div>
+          <div class="transferSub">Export & import your diagnoses</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="statNum">${data.length}</div><div class="statLabel">Total Records</div></div>
+        <div class="stat"><div class="statNum">${countImages()}</div><div class="statLabel">Total Images</div></div>
+      </div>
+      <div class="transferCard">
+        <div class="transferCardHead">
+          <div class="squareIcon export">⇩</div>
+          <div><h3>Export</h3><p>Download backup file</p></div>
+        </div>
+        <div class="hint">ⓘ Exports a backup file containing backup.json and attached images. On iPhone/iPad, unzip it before importing.</div>
+        <button class="exportBtn" onclick="exportJSON()">⇩ Export ${data.length} Record(s)</button>
+      </div>
+      <div class="transferCard">
+        <div class="transferCardHead">
+          <div class="squareIcon import">↥</div>
+          <div><h3>Import</h3><p>Load backup.json and images</p></div>
+        </div>
+        <div class="hint">ⓘ On iPhone/iPad: unzip your exported backup first, then select backup.json and all image files together.</div>
+        <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
+      </div>
+    </div>
+  `;
+}
+
+async function exportJSON(){
+  showLoading();
+  try{
+    let zip=new JSZip();
+    let imgFolder=zip.folder("images");
+    let exportData=[];
+    for(let i=0;i<data.length;i++){
+      let d=data[i], imgNames=[], imgs=d.imgs||[];
+      for(let j=0;j<imgs.length;j++){
+        let name=`img_${i}_${j}.jpg`;
+        imgNames.push(name);
+        let res=await fetch(imgs[j]);
+        let blob=await res.blob();
+        imgFolder.file(name,blob);
+      }
+      exportData.push({dx:d.dx,one:d.one,con:d.con,note:d.note,fav:d.fav||false,imgs:imgNames});
+    }
+    zip.file("backup.json",JSON.stringify({data:exportData,deleted:[]},null,2));
+    let content=await zip.generateAsync({type:"blob",compression:"DEFLATE",compressionOptions:{level:3}});
+    let a=document.createElement("a");
+    a.href=URL.createObjectURL(content);
+    a.download="backup.zip";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }catch(err){
+    console.error(err);
+    alert("Export failed");
+  }
+  hideLoading();
+}
+
+
+function fileToDataURL(file){
+  return new Promise((resolve,reject)=>{
+    let r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+}
+
+async function importFolderBackup(event){
+  let files=Array.from(event.target.files||[]);
+  event.target.value="";
+  if(!files.length) return;
+
+  showLoading();
+  try{
+    let jsonFile=files.find(f=>f.name==="backup.json" || f.name.endsWith("/backup.json"));
+    if(!jsonFile){
+      hideLoading();
+      alert("No backup.json found in selected folder");
+      return;
+    }
+
+    let parsed=JSON.parse(await jsonFile.text());
+    if(!parsed.data || !Array.isArray(parsed.data)){
+      hideLoading();
+      alert("Invalid backup.json");
+      return;
+    }
+
+    let imageMap={};
+    files.forEach(f=>{
+      if(f.name !== "backup.json"){
+        imageMap[f.name]=f;
+        imageMap[f.webkitRelativePath]=f;
+        imageMap["images/"+f.name]=f;
+      }
+    });
+
+    let tx=db.transaction("data","readwrite");
+    let store=tx.objectStore("data");
+    let count=0, missing=0;
+
+    for(let item of parsed.data){
+      let importedImgs=[];
+      for(let name of (item.imgs||[])){
+        let file=imageMap[name] || imageMap["images/"+name] || imageMap[name.split("/").pop()];
+        if(!file){ missing++; continue; }
+        importedImgs.push(await fileToDataURL(file));
+      }
+
+      store.add({
+        dx:item.dx||"Untitled",
+        one:item.one||"",
+        con:item.con||"",
+        note:item.note||"",
+        fav:item.fav||false,
+        imgs:importedImgs
+      });
+      count++;
+    }
+
+    tx.oncomplete=()=>loadAll(()=>{
+      hideLoading();
+      goHome();
+      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records successfully`);
+    });
+    tx.onerror=()=>{hideLoading();alert("Database error during import");};
+  }catch(err){
+    console.error(err);
+    hideLoading();
+    alert("Folder import failed");
+  }
+}
+
+
+async function importSelectedFiles(event){
+  let files=Array.from(event.target.files||[]);
+  event.target.value="";
+  if(!files.length) return;
+
+  showLoading();
+  try{
+    let jsonFile=files.find(f=>f.name==="backup.json" || f.name.toLowerCase().endsWith(".json"));
+    if(!jsonFile){
+      hideLoading();
+      alert("Please select backup.json together with the image files");
+      return;
+    }
+
+    let parsed=JSON.parse(await jsonFile.text());
+    if(!parsed.data || !Array.isArray(parsed.data)){
+      hideLoading();
+      alert("Invalid backup.json");
+      return;
+    }
+
+    let imageMap={};
+    files.forEach(f=>{
+      if(f===jsonFile) return;
+      imageMap[f.name]=f;
+      if(f.webkitRelativePath){
+        imageMap[f.webkitRelativePath]=f;
+        imageMap[f.webkitRelativePath.split("/").pop()]=f;
+      }
+    });
+
+    let tx=db.transaction("data","readwrite");
+    let store=tx.objectStore("data");
+    let count=0, missing=0;
+
+    for(let item of parsed.data){
+      let importedImgs=[];
+
+      for(let name of (item.imgs||[])){
+        let shortName=String(name).split("/").pop();
+        let file=imageMap[name] || imageMap["images/"+name] || imageMap[shortName];
+
+        if(!file){
+          missing++;
+          continue;
+        }
+
+        importedImgs.push(await fileToDataURL(file));
+      }
+
+      store.add({
+        dx:item.dx||"Untitled",
+        one:item.one||"",
+        con:item.con||"",
+        note:item.note||"",
+        fav:item.fav||false,
+        imgs:importedImgs
+      });
+      count++;
+    }
+
+    tx.oncomplete=()=>loadAll(()=>{
+      hideLoading();
+      goHome();
+      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records successfully`);
+    });
+    tx.onerror=()=>{
+      hideLoading();
+      alert("Database error during import");
+    };
+
+  }catch(err){
+    console.error(err);
+    hideLoading();
+    alert("Import failed. Select backup.json and the image files from the unzipped backup.");
+  }
+}
+
+async function importZip(event){
+  let file=event.target.files?.[0];
+  event.target.value="";
+  if(!file) return;
+  showLoading();
+  try{
+    let zip=await JSZip.loadAsync(file);
+    let jsonFile=zip.file("backup.json");
+    if(!jsonFile){alert("No backup.json found in ZIP");hideLoading();return;}
+    let parsed=JSON.parse(await jsonFile.async("string"));
+    if(!parsed.data || !Array.isArray(parsed.data)){alert("Invalid backup file");hideLoading();return;}
+
+    let tx=db.transaction("data","readwrite");
+    let store=tx.objectStore("data");
+    let count=0, missing=0;
+
+    for(let item of parsed.data){
+      let importedImgs=[];
+      for(let name of (item.imgs||[])){
+        let zf=zip.file("images/"+name) || zip.file(name);
+        if(!zf){missing++; continue;}
+        let blob=await zf.async("blob");
+        let dataUrl=await new Promise(resolve=>{
+          let r=new FileReader();
+          r.onload=()=>resolve(r.result);
+          r.readAsDataURL(blob);
+        });
+        importedImgs.push(dataUrl);
+      }
+      store.add({
+        dx:item.dx||"Untitled",
+        one:item.one||"",
+        con:item.con||"",
+        note:item.note||"",
+        fav:item.fav||false,
+        imgs:importedImgs
+      });
+      count++;
+    }
+
+    tx.oncomplete=()=>loadAll(()=>{
+      hideLoading();
+      goHome();
+      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records successfully`);
+    });
+    tx.onerror=()=>{hideLoading();alert("Database error during import");};
+  }catch(err){
+    console.error(err);
+    hideLoading();
+    alert("Import failed. Please select a valid backup.zip");
+  }
+}
+
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+</body>
+</html>
