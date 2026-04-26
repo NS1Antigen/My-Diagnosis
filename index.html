@@ -309,8 +309,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     </div>
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
-  <input id="jsonImportInput" class="hiddenInput" type="file" accept=".json,application/json" onchange="importJSONOnly(event)">
-  <input id="imageImportInput" class="hiddenInput" type="file" multiple accept=".png,.jpg,.jpeg,image/png,image/jpeg" onchange="importImagesOnly(event)">
+  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,image/jpeg" onchange="importAll(event)">
 </div>
 
 <div id="imgModal">
@@ -762,11 +761,10 @@ function renderTransfer(){
       <div class="transferCard">
         <div class="transferCardHead">
           <div class="squareIcon import">↥</div>
-          <div><h3>Import</h3><p>Import text first, then images</p></div>
+          <div><h3>Import</h3><p>Import backup.json + JPEG images</p></div>
         </div>
-        <div class="hint">① Tap Import JSON and select backup.json. ② Tap Import Images and select all image files from the images folder. PNG/JPG/JPEG work.</div>
-        <button class="importBtn" onclick="$('jsonImportInput').click()">↥ Import JSON</button>
-        <button class="importBtn" style="margin-top:12px" onclick="$('imageImportInput').click()">▧ Import Images</button>
+        <div class="hint">ⓘ Unzip your backup first. Go inside the unzipped folder, select backup.json together with all .jpg/.jpeg image files, then press Open/Upload.</div>
+        <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
       </div>
     </div>
   `;
@@ -805,26 +803,6 @@ async function exportJSON(){
 
 
 
-function normalizeImageName(name){
-  return String(name||"").split("/").pop().toLowerCase();
-}
-function baseNameNoExt(name){
-  return normalizeImageName(name).replace(/\.[^.]+$/,"");
-}
-function findImageFileAnyExt(imageMap, imgRef){
-  let clean=normalizeImageName(imgRef);
-  let base=baseNameNoExt(clean);
-  let candidates=[
-    clean,
-    base+".jpg",
-    base+".jpeg",
-    base+".png"
-  ];
-  for(let c of candidates){
-    if(imageMap[c]) return imageMap[c];
-  }
-  return null;
-}
 
 function fileToDataURL(file){
   return new Promise((resolve,reject)=>{
@@ -918,15 +896,37 @@ async function importBackupFiles(event){
 }
 
 
-async function importJSONOnly(event){
-  let file=event.target.files?.[0];
+
+
+
+function cleanFileName(name){
+  return String(name||"").split("/").pop().toLowerCase();
+}
+function imageBaseName(name){
+  return cleanFileName(name).replace(/\.[^.]+$/,"");
+}
+
+async function importAll(event){
+  let files=Array.from(event.target.files||[]);
   event.target.value="";
-  if(!file) return;
+
+  if(!files.length){
+    alert("No files selected");
+    return;
+  }
 
   showLoading();
 
   try{
-    let parsed=JSON.parse(await file.text());
+    let jsonFile=files.find(f=>f.name.toLowerCase().endsWith(".json"));
+
+    if(!jsonFile){
+      hideLoading();
+      alert("Please select backup.json together with JPEG/JPG images");
+      return;
+    }
+
+    let parsed=JSON.parse(await jsonFile.text());
 
     if(!parsed.data || !Array.isArray(parsed.data)){
       hideLoading();
@@ -934,14 +934,45 @@ async function importJSONOnly(event){
       return;
     }
 
+    let imageMap={};
+
+    files.forEach(f=>{
+      let name=cleanFileName(f.name);
+      if(name.endsWith(".jpg") || name.endsWith(".jpeg")){
+        imageMap[name]=f;
+      }
+    });
+
     let tx=db.transaction("data","readwrite");
     let store=tx.objectStore("data");
-    let count=0;
-    let pending=0;
 
-    parsed.data.forEach(item=>{
-      let names=Array.isArray(item.imgs) ? item.imgs : [];
-      pending += names.length;
+    let count=0;
+    let matched=0;
+    let missing=0;
+
+    for(let item of parsed.data){
+      let imgs=[];
+
+      for(let ref of (item.imgs||[])){
+        if(typeof ref==="string" && ref.startsWith("data:image")){
+          imgs.push(ref);
+          matched++;
+          continue;
+        }
+
+        let clean=cleanFileName(ref);
+        let base=imageBaseName(clean);
+
+        let file=imageMap[clean] || imageMap[base+".jpg"] || imageMap[base+".jpeg"];
+
+        if(!file){
+          missing++;
+          continue;
+        }
+
+        imgs.push(await fileToDataURL(file));
+        matched++;
+      }
 
       store.add({
         dx:item.dx || "Untitled",
@@ -949,97 +980,31 @@ async function importJSONOnly(event){
         con:item.con || "",
         note:item.note || "",
         fav:item.fav || false,
-        imgs:[],
-        imgNames:names
+        imgs:imgs
       });
 
       count++;
-    });
-
-    tx.oncomplete=()=>loadAll(()=>{
-      hideLoading();
-      goHome();
-      alert(`Imported ${count} records. Now tap Import Images to attach ${pending} image(s).`);
-    });
-
-    tx.onerror=()=>{
-      hideLoading();
-      alert("Database error during JSON import");
-    };
-
-  }catch(err){
-    console.error(err);
-    hideLoading();
-    alert("JSON import failed");
-  }
-}
-
-async function importImagesOnly(event){
-  let files=Array.from(event.target.files||[]);
-  event.target.value="";
-  if(!files.length) return;
-
-  showLoading();
-
-  try{
-    let imageMap={};
-
-    files.forEach(f=>{
-      let name=normalizeImageName(f.name);
-      if(!name.endsWith(".png") && !name.endsWith(".jpg") && !name.endsWith(".jpeg")) return;
-      imageMap[name]=f;
-    });
-
-    let tx=db.transaction("data","readwrite");
-    let store=tx.objectStore("data");
-
-    let matched=0;
-    let missing=0;
-
-    for(let d of data){
-      let names=Array.isArray(d.imgNames) ? d.imgNames : [];
-
-      if(!names.length) continue;
-
-      let importedImgs=[];
-
-      for(let imgRef of names){
-        if(typeof imgRef==="string" && imgRef.startsWith("data:image")){
-          importedImgs.push(imgRef);
-          matched++;
-          continue;
-        }
-
-        let file=findImageFileAnyExt(imageMap, imgRef);
-
-        if(!file){
-          missing++;
-          continue;
-        }
-
-        importedImgs.push(await fileToDataURL(file));
-        matched++;
-      }
-
-      d.imgs=importedImgs;
-      store.put(d);
     }
 
     tx.oncomplete=()=>loadAll(()=>{
       hideLoading();
       goHome();
-      alert(missing ? `Images imported. Matched: ${matched}. Missing: ${missing}.` : `Images imported successfully. Matched: ${matched}.`);
+      alert(
+        missing
+        ? `Imported ${count} records\nMatched images: ${matched}\nMissing images: ${missing}`
+        : `Imported ${count} records with images successfully`
+      );
     });
 
     tx.onerror=()=>{
       hideLoading();
-      alert("Database error during image import");
+      alert("Database error during import");
     };
 
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Image import failed");
+    alert("Import failed. Select backup.json + JPEG/JPG images together.");
   }
 }
 
