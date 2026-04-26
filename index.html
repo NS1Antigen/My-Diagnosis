@@ -838,6 +838,7 @@ async function exportJSON(){
 
 
 
+
 function fileToDataURL(file){
   return new Promise((resolve,reject)=>{
     let r=new FileReader();
@@ -847,97 +848,207 @@ function fileToDataURL(file){
   });
 }
 
-
-
-
-async function importBackupFiles(event){
-  let files=Array.from(event.target.files||[]);
-  event.target.value="";
-  if(!files.length) return;
-
-  showLoading();
-  try{
-    let jsonFile=files.find(f=>f.name==="backup.json" || f.name.endsWith(".json"));
-    if(!jsonFile){
-      hideLoading();
-      alert("Please select backup.json together with the image files");
-      return;
-    }
-
-    let parsed=JSON.parse(await jsonFile.text());
-    if(!parsed.data || !Array.isArray(parsed.data)){
-      hideLoading();
-      alert("Invalid backup.json");
-      return;
-    }
-
-    let imageMap={};
-    files.forEach(f=>{
-      if(!f.name.endsWith(".json")){
-        imageMap[f.name]=f;
-        imageMap[f.webkitRelativePath]=f;
-        imageMap["images/"+f.name]=f;
-      }
-    });
-
-    let tx=db.transaction("data","readwrite");
-    let store=tx.objectStore("data");
-    let count=0, missing=0;
-
-    for(let item of parsed.data){
-      let importedImgs=[];
-
-      for(let imgRef of (item.imgs||[])){
-        // If old backup already contains base64 image, keep it
-        if(typeof imgRef==="string" && imgRef.startsWith("data:image")){
-          importedImgs.push(imgRef);
-          continue;
-        }
-
-        let file=findImageFile(imageMap, imgRef);
-
-        if(!file){
-          missing++;
-          continue;
-        }
-
-        importedImgs.push(await fileToDataURL(file));
-      }
-
-      store.add({
-        dx:item.dx||"Untitled",
-        one:item.one||"",
-        con:item.con||"",
-        note:item.note||"",
-        fav:item.fav||false,
-        imgs:importedImgs
-      });
-      count++;
-    }
-
-    tx.oncomplete=()=>loadAll(()=>{
-      hideLoading();
-      goHome();
-      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records with images successfully`);
-    });
-    tx.onerror=()=>{hideLoading();alert("Database error during import");};
-
-  }catch(err){
-    console.error(err);
-    hideLoading();
-    alert("Import failed. Select backup.json and the image files together.");
-  }
+function dataURLToBlob(dataURL){
+  let parts=String(dataURL).split(",");
+  let mime=(parts[0].match(/:(.*?);/)||[])[1] || "image/jpeg";
+  let binary=atob(parts[1] || "");
+  let arr=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) arr[i]=binary.charCodeAt(i);
+  return new Blob([arr],{type:mime});
 }
 
+function loadImageFromDataURL(dataURL){
+  return new Promise((resolve,reject)=>{
+    let img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=()=>reject(new Error("Image could not be read"));
+    img.src=dataURL;
+  });
+}
 
+async function imageToJpegDataURL(input){
+  // input can be File/Blob or an old base64 data:image string.
+  let dataURL = (typeof input === "string") ? input : await fileToDataURL(input);
 
+  // Already JPEG/JPG data URL: keep it. This avoids quality loss.
+  if(String(dataURL).startsWith("data:image/jpeg") || String(dataURL).startsWith("data:image/jpg")){
+    return dataURL.replace("data:image/jpg", "data:image/jpeg");
+  }
 
+  let img=await loadImageFromDataURL(dataURL);
+  let canvas=document.createElement("canvas");
+  canvas.width=img.naturalWidth || img.width;
+  canvas.height=img.naturalHeight || img.height;
+  let ctx=canvas.getContext("2d");
+  ctx.fillStyle="#ffffff"; // PNG transparency becomes white in JPEG.
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0);
+  return canvas.toDataURL("image/jpeg",0.92);
+}
 
 function cleanFileName(name){
-  return String(name||"").split("/").pop().toLowerCase();
+  return String(name||"").split("/").pop().toLowerCase().trim();
+}
+function cleanPath(name){
+  return String(name||"").replace(/^\.\//,"").toLowerCase().trim();
 }
 function imageBaseName(name){
   return cleanFileName(name).replace(/\.[^.]+$/,"");
+}
+function isJsonName(name){
+  let n=cleanFileName(name);
+  return n==="backup.json" || n.endsWith(".json");
+}
+function isZipFile(f){
+  let n=cleanFileName(f && f.name);
+  let t=String(f && f.type || "").toLowerCase();
+  return n.endsWith(".zip") || t.includes("zip");
+}
+function isImageLikeName(name){
+  let n=cleanFileName(name);
+  return n.endsWith(".jpeg") || n.endsWith(".jpg") || n.endsWith(".png") || n.endsWith(".webp") || n.endsWith(".heic") || n.endsWith(".heif");
+}
+function addToImageMaps(mapExact,mapBase,key,obj){
+  key=cleanPath(key);
+  let name=cleanFileName(key);
+  if(!name || !isImageLikeName(name)) return;
+  mapExact[key]=obj;
+  mapExact[name]=obj;
+  let base=imageBaseName(name);
+  if(base && !mapBase[base]) mapBase[base]=obj;
+}
+function findImageObject(mapExact,mapBase,ref){
+  let path=cleanPath(ref);
+  let name=cleanFileName(path);
+  let base=imageBaseName(name);
+  return mapExact[path] || mapExact[name] ||
+    mapExact[base+".jpeg"] || mapExact[base+".jpg"] || mapExact[base+".png"] ||
+    mapExact["images/"+base+".jpeg"] || mapExact["images/"+base+".jpg"] || mapExact["images/"+base+".png"] ||
+    mapBase[base];
+}
+
+async function buildRecordsFromParsed(parsed, imageGetter, finder){
+  let records=[];
+  let matched=0, converted=0, missing=0;
+  let failedImages=[];
+
+  for(let item of parsed.data){
+    let imgs=[];
+
+    for(let ref of (item.imgs||[])){
+      try{
+        if(typeof ref==="string" && ref.startsWith("data:image")){
+          let before=!ref.startsWith("data:image/jpeg");
+          imgs.push(await imageToJpegDataURL(ref));
+          matched++;
+          if(before) converted++;
+          continue;
+        }
+
+        let obj=finder(ref);
+        if(!obj){
+          missing++;
+          failedImages.push(cleanFileName(ref) || String(ref));
+          continue;
+        }
+
+        let blobOrFile=await imageGetter(obj);
+        imgs.push(await imageToJpegDataURL(blobOrFile));
+        matched++;
+        let n=cleanFileName(obj.name || obj.path || ref);
+        if(!n.endsWith(".jpeg")) converted++;
+      }catch(err){
+        console.warn("Image import failed:", ref, err);
+        missing++;
+        failedImages.push(cleanFileName(ref) || String(ref));
+      }
+    }
+
+    records.push({
+      dx:item.dx || "Untitled",
+      one:item.one || "",
+      con:item.con || "",
+      note:item.note || "",
+      fav:item.fav || false,
+      imgs:imgs
+    });
+  }
+
+  return {records, matched, converted, missing, failedImages};
+}
+
+function saveImportedRecords(result){
+  return new Promise((resolve,reject)=>{
+    let tx=db.transaction("data","readwrite");
+    let store=tx.objectStore("data");
+    result.records.forEach(r=>store.add(r));
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error || new Error("Database error during import"));
+  });
+}
+
+function showImportResult(result){
+  let msg=`Imported ${result.records.length} records\nMatched images: ${result.matched}\nConverted/saved as JPEG: ${result.converted}`;
+  if(result.missing){
+    msg += `\nMissing or unreadable images: ${result.missing}`;
+    if(result.failedImages.length) msg += `\nFirst missing: ${result.failedImages.slice(0,5).join(", ")}`;
+  }
+  alert(msg);
+}
+
+async function importFromZip(zipFile){
+  let zip=await JSZip.loadAsync(zipFile);
+  let entries=[];
+  zip.forEach((path,entry)=>{
+    if(!entry.dir && !path.includes("__MACOSX/")) entries.push({path,entry,name:cleanFileName(path)});
+  });
+
+  let jsonEntry=entries.find(x=>x.name==="backup.json") || entries.find(x=>x.name.endsWith(".json"));
+  if(!jsonEntry) throw new Error("backup.json not found inside ZIP");
+
+  let parsed=JSON.parse(await jsonEntry.entry.async("text"));
+  if(!parsed.data || !Array.isArray(parsed.data)) throw new Error("Invalid backup.json inside ZIP");
+
+  let exactMap={}, baseMap={};
+  entries.forEach(x=>{
+    if(isJsonName(x.name)) return;
+    addToImageMaps(exactMap,baseMap,x.path,{type:"zip",path:x.path,name:x.name,entry:x.entry});
+  });
+
+  return await buildRecordsFromParsed(
+    parsed,
+    async obj=>await obj.entry.async("blob"),
+    ref=>findImageObject(exactMap,baseMap,ref)
+  );
+}
+
+async function importFromSelectedFiles(files){
+  let jsonFile=files.find(f=>{
+    let name=cleanFileName(f.name);
+    let rel=cleanPath(f.webkitRelativePath||"");
+    return name==="backup.json" || rel.endsWith("/backup.json") || name.endsWith(".json");
+  });
+  if(!jsonFile) throw new Error("backup.json not found. Select backup.json together with the image files.");
+
+  let parsed=JSON.parse(await jsonFile.text());
+  if(!parsed.data || !Array.isArray(parsed.data)) throw new Error("Invalid backup.json");
+
+  let exactMap={}, baseMap={};
+  files.forEach(f=>{
+    let name=cleanFileName(f.name);
+    let rel=cleanPath(f.webkitRelativePath||"");
+    if(isJsonName(name) || isJsonName(rel)) return;
+
+    // Treat every selected non-JSON file as a possible image by name/path.
+    addToImageMaps(exactMap,baseMap,name,f);
+    if(rel) addToImageMaps(exactMap,baseMap,rel,f);
+  });
+
+  return await buildRecordsFromParsed(
+    parsed,
+    async obj=>obj,
+    ref=>findImageObject(exactMap,baseMap,ref)
+  );
 }
 
 async function importAll(event){
@@ -950,135 +1061,81 @@ async function importAll(event){
   }
 
   showLoading();
-
   try{
-    let jsonFile=files.find(f=>{
-      let name=cleanFileName(f.name);
-      let rel=String(f.webkitRelativePath||"").toLowerCase();
-      return name==="backup.json" || rel.endsWith("/backup.json") || name.endsWith(".json");
-    });
+    let zipFile=files.find(isZipFile);
+    let result = zipFile ? await importFromZip(zipFile) : await importFromSelectedFiles(files);
 
-    if(!jsonFile){
-      hideLoading();
-      alert("Please select backup.json together with the image files.");
-      return;
-    }
-
-    let parsed=JSON.parse(await jsonFile.text());
-
-    if(!parsed.data || !Array.isArray(parsed.data)){
-      hideLoading();
-      alert("Invalid backup.json");
-      return;
-    }
-
-    // iPhone/iPad Files fix:
-    // Do NOT use accept='image/*' and do NOT trust file.type.
-    // Treat every non-JSON selected file as a possible image file.
-    let exactMap={};
-    let baseMap={};
-
-    files.forEach(f=>{
-      let name=cleanFileName(f.name);
-      let rel=String(f.webkitRelativePath||"").toLowerCase();
-      let relName=cleanFileName(rel);
-
-      if(name.endsWith(".json") || relName.endsWith(".json")) return;
-
-      [name, relName].filter(Boolean).forEach(k=>{
-        exactMap[k]=f;
-        let base=imageBaseName(k);
-        if(base && !baseMap[base]) baseMap[base]=f;
-      });
-    });
-
-    let tx=db.transaction("data","readwrite");
-    let store=tx.objectStore("data");
-
-    let count=0;
-    let matched=0;
-    let converted=0;
-    let missing=0;
-    let failedImages=[];
-
-    for(let item of parsed.data){
-      let imgs=[];
-
-      for(let ref of (item.imgs||[])){
-        if(typeof ref==="string" && ref.startsWith("data:image")){
-          let before=ref.startsWith("data:image/png") || ref.startsWith("data:image/jpg");
-          imgs.push(await dataUrlOrFileToJpegDataURL(ref));
-          matched++;
-          if(before) converted++;
-          continue;
-        }
-
-        let clean=cleanFileName(ref);
-        let base=imageBaseName(clean);
-
-        let file=
-          exactMap[clean] ||
-          exactMap[base+".jpeg"] ||
-          exactMap[base+".jpg"] ||
-          exactMap[base+".png"] ||
-          exactMap[base+".heic"] ||
-          baseMap[base];
-
-        if(!file){
-          missing++;
-          failedImages.push(clean || String(ref));
-          continue;
-        }
-
-        try{
-          let fileName=cleanFileName(file.name);
-          imgs.push(await dataUrlOrFileToJpegDataURL(file));
-          matched++;
-          if(!fileName.endsWith(".jpeg")) converted++;
-        }catch(imgErr){
-          console.warn("Selected file could not be loaded as an image:", file.name, imgErr);
-          missing++;
-          failedImages.push(clean || String(ref));
-        }
-      }
-
-      store.add({
-        dx:item.dx || "Untitled",
-        one:item.one || "",
-        con:item.con || "",
-        note:item.note || "",
-        fav:item.fav || false,
-        imgs:imgs
-      });
-
-      count++;
-    }
-
-    tx.oncomplete=()=>loadAll(()=>{
+    await saveImportedRecords(result);
+    loadAll(()=>{
       hideLoading();
       goHome();
-      let msg=`Imported ${count} records\nMatched images: ${matched}\nConverted/saved as JPEG: ${converted}`;
-      if(missing){
-        msg += `\nMissing or unreadable images: ${missing}`;
-        if(failedImages.length) msg += `\nFirst missing: ${failedImages.slice(0,3).join(", ")}`;
-      }
-      alert(msg);
+      showImportResult(result);
     });
-
-    tx.onerror=()=>{
-      hideLoading();
-      alert("Database error during import");
-    };
-
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Import failed. Select backup.json and all image files together from Files.");
+    alert(err && err.message ? err.message : "Import failed");
   }
 }
 
 async function importFolderOnly(event){
   return importAll(event);
+}
+
+function blobFromDataURL(dataURL){
+  return dataURLToBlob(dataURL);
+}
+
+async function exportJSON(){
+  showLoading();
+  try{
+    let zip=new JSZip();
+    let exportData=[];
+
+    for(let i=0;i<data.length;i++){
+      let d=data[i];
+      let imgNames=[];
+      let imgs=d.imgs||[];
+
+      for(let j=0;j<imgs.length;j++){
+        // Always export as JPEG for consistent import on iPhone/iPad.
+        let jpegDataURL=await imageToJpegDataURL(imgs[j]);
+        let name=`img_${i}_${j}.jpeg`;
+        imgNames.push(name);
+        zip.file(name, blobFromDataURL(jpegDataURL));
+      }
+
+      exportData.push({
+        dx:d.dx,
+        one:d.one,
+        con:d.con,
+        note:d.note,
+        fav:d.fav||false,
+        imgs:imgNames
+      });
+    }
+
+    zip.file("backup.json",JSON.stringify({data:exportData,deleted:[]},null,2));
+
+    let content=await zip.generateAsync({
+      type:"blob",
+      compression:"DEFLATE",
+      compressionOptions:{level:3}
+    });
+
+    let a=document.createElement("a");
+    a.href=URL.createObjectURL(content);
+    a.download="backup.zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+
+  }catch(err){
+    console.error(err);
+    alert("Export failed");
+  }
+  hideLoading();
 }
 
 if("serviceWorker" in navigator){
