@@ -755,7 +755,7 @@ function renderTransfer(){
           <div class="squareIcon export">⇩</div>
           <div><h3>Export</h3><p>Download backup file</p></div>
         </div>
-        <div class="hint">ⓘ Exports a backup file. After unzip, backup.json and all JPEG images will be in the same folder for easier iPad import.</div>
+        <div class="hint">ⓘ Exports a backup file. After unzip, backup.json and all image files (.jpg/.jpeg/.png) will be in the same folder for easier iPad import.</div>
         <button class="exportBtn" onclick="exportJSON()">⇩ Export ${data.length} Record(s)</button>
       </div>
       <div class="transferCard">
@@ -770,6 +770,13 @@ function renderTransfer(){
   `;
 }
 
+function imageExtensionFromBlob(blob){
+  let type=String(blob && blob.type || "").toLowerCase();
+  if(type.includes("png")) return ".png";
+  if(type.includes("jpeg") || type.includes("jpg")) return ".jpeg";
+  return ".jpg";
+}
+
 async function exportJSON(){
   showLoading();
   try{
@@ -782,14 +789,16 @@ async function exportJSON(){
       let imgs=d.imgs||[];
 
       for(let j=0;j<imgs.length;j++){
-        let name=`img_${i}_${j}.jpg`;
-        imgNames.push(name);
-
         let res=await fetch(imgs[j]);
         let blob=await res.blob();
 
-        // IMPORTANT: images are saved at ZIP root level, not inside images/
-        // After unzip: backup.json and img_0_0.jpg are in the same folder.
+        // FIX: do not force every image to .jpg.
+        // The filename written into backup.json must match the real exported file.
+        let ext=imageExtensionFromBlob(blob);
+        let name=`img_${i}_${j}${ext}`;
+        imgNames.push(name);
+
+        // Images are saved at ZIP root level, same folder as backup.json.
         zip.file(name, blob);
       }
 
