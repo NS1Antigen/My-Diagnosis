@@ -227,16 +227,19 @@ body.dark .infoCard.con{background:#2d2148}
 body.dark .infoCard.note{background:#3a3217}
 body.dark .infoCard.attach{background:#12372b}
 .themeToggle{
-  width:46px;
-  height:42px;
-  border-radius:13px;
-  background:white;
-  border:1px solid var(--line);
-  color:#087cff;
-  font-size:21px;
-  box-shadow:0 2px 8px rgba(15,23,42,.04);
+  position:fixed;
+  top:14px;
+  right:14px;
+  z-index:100;
+  width:44px;
+  height:44px;
+  border-radius:16px;
+  background:rgba(255,255,255,.22);
+  color:white;
+  font-size:22px;
+  backdrop-filter:blur(8px);
 }
-body.dark .themeToggle{background:#1f2937;border-color:#334155;color:#facc15}
+body.dark .themeToggle{background:rgba(15,23,42,.65)}
 
 
 .homeToolbar{
@@ -306,7 +309,10 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
 
-  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,image/*" onchange="importSelectedFiles(event)">
+  <button id="themeToggle" class="themeToggle" onclick="toggleTheme()">🌙</button>
+  <input id="importInput" class="hiddenInput" type="file" accept=".zip,application/zip" onchange="importZip(event)">
+  <input id="folderInput" class="hiddenInput" type="file" multiple webkitdirectory onchange="importFolderBackup(event)">
+  <input id="backupFilesInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,.png,image/*" onchange="importBackupFiles(event)">
 </div>
 
 <div id="imgModal">
@@ -414,19 +420,11 @@ function renderHome(){
           <button class="toolbarBtn fillDanger" onclick="deleteSelected()">Delete (${selectedIds.size})</button>
         ` : `
           <span></span>
-          <div style="display:flex;gap:10px;align-items:center">
-            <button id="themeToggle" class="themeToggle" onclick="toggleTheme()">🌙</button>
-            <button class="toolbarBtn" onclick="enterSelectMode()">Select</button>
-          </div>
+          <button class="toolbarBtn" onclick="enterSelectMode()">Select</button>
         `
       }
     </div>
-  ` : `
-    <div class="homeToolbar">
-      <span></span>
-      <button id="themeToggle" class="themeToggle" onclick="toggleTheme()">🌙</button>
-    </div>
-  `;
+  ` : "";
 
   $("homeScreen").innerHTML=`
     <div class="header">
@@ -450,7 +448,6 @@ function renderHome(){
       `${toolbar}<div class="homeList">${data.map((d,i)=>diagnosisCard(d,i)).join("")}</div>`
     }
   `;
-  applySavedTheme();
 }
 
 function diagnosisCard(d,i){
@@ -762,10 +759,10 @@ function renderTransfer(){
       <div class="transferCard">
         <div class="transferCardHead">
           <div class="squareIcon import">↥</div>
-          <div><h3>Import</h3><p>Load backup.json and images</p></div>
+          <div><h3>Import</h3><p>Load data from your backup folder</p></div>
         </div>
-        <div class="hint">ⓘ On iPhone/iPad: unzip your exported backup first, then select backup.json and all image files together.</div>
-        <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
+        <div class="hint">ⓘ On iPhone/iPad: unzip your backup first, then select backup.json together with all image files from the images folder.</div>
+        <button class="importBtn" onclick="$('backupFilesInput').click()">↥ Import</button>
       </div>
     </div>
   `;
@@ -810,6 +807,87 @@ function fileToDataURL(file){
     r.onerror=reject;
     r.readAsDataURL(file);
   });
+}
+
+
+async function importBackupFiles(event){
+  let files=Array.from(event.target.files||[]);
+  event.target.value="";
+  if(!files.length) return;
+
+  showLoading();
+  try{
+    let jsonFile=files.find(f=>f.name==="backup.json" || f.name.endsWith(".json"));
+    if(!jsonFile){
+      hideLoading();
+      alert("Please select backup.json together with the image files");
+      return;
+    }
+
+    let parsed=JSON.parse(await jsonFile.text());
+    if(!parsed.data || !Array.isArray(parsed.data)){
+      hideLoading();
+      alert("Invalid backup.json");
+      return;
+    }
+
+    let imageMap={};
+    files.forEach(f=>{
+      if(!f.name.endsWith(".json")){
+        imageMap[f.name]=f;
+        imageMap[f.webkitRelativePath]=f;
+        imageMap["images/"+f.name]=f;
+      }
+    });
+
+    let tx=db.transaction("data","readwrite");
+    let store=tx.objectStore("data");
+    let count=0, missing=0;
+
+    for(let item of parsed.data){
+      let importedImgs=[];
+
+      for(let imgRef of (item.imgs||[])){
+        // If old backup already contains base64 image, keep it
+        if(typeof imgRef==="string" && imgRef.startsWith("data:image")){
+          importedImgs.push(imgRef);
+          continue;
+        }
+
+        let cleanName=String(imgRef).split("/").pop();
+        let file=imageMap[imgRef] || imageMap["images/"+imgRef] || imageMap[cleanName];
+
+        if(!file){
+          missing++;
+          continue;
+        }
+
+        importedImgs.push(await fileToDataURL(file));
+      }
+
+      store.add({
+        dx:item.dx||"Untitled",
+        one:item.one||"",
+        con:item.con||"",
+        note:item.note||"",
+        fav:item.fav||false,
+        imgs:importedImgs
+      });
+      count++;
+    }
+
+    tx.oncomplete=()=>loadAll(()=>{
+      hideLoading();
+      goHome();
+      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records with images successfully`);
+    });
+    tx.onerror=()=>{hideLoading();alert("Database error during import");};
+
+  }catch(err){
+    console.error(err);
+    hideLoading();
+    alert("Import failed. Select backup.json and the image files together.");
+  }
 }
 
 async function importFolderBackup(event){
@@ -875,85 +953,6 @@ async function importFolderBackup(event){
     console.error(err);
     hideLoading();
     alert("Folder import failed");
-  }
-}
-
-
-async function importSelectedFiles(event){
-  let files=Array.from(event.target.files||[]);
-  event.target.value="";
-  if(!files.length) return;
-
-  showLoading();
-  try{
-    let jsonFile=files.find(f=>f.name==="backup.json" || f.name.toLowerCase().endsWith(".json"));
-    if(!jsonFile){
-      hideLoading();
-      alert("Please select backup.json together with the image files");
-      return;
-    }
-
-    let parsed=JSON.parse(await jsonFile.text());
-    if(!parsed.data || !Array.isArray(parsed.data)){
-      hideLoading();
-      alert("Invalid backup.json");
-      return;
-    }
-
-    let imageMap={};
-    files.forEach(f=>{
-      if(f===jsonFile) return;
-      imageMap[f.name]=f;
-      if(f.webkitRelativePath){
-        imageMap[f.webkitRelativePath]=f;
-        imageMap[f.webkitRelativePath.split("/").pop()]=f;
-      }
-    });
-
-    let tx=db.transaction("data","readwrite");
-    let store=tx.objectStore("data");
-    let count=0, missing=0;
-
-    for(let item of parsed.data){
-      let importedImgs=[];
-
-      for(let name of (item.imgs||[])){
-        let shortName=String(name).split("/").pop();
-        let file=imageMap[name] || imageMap["images/"+name] || imageMap[shortName];
-
-        if(!file){
-          missing++;
-          continue;
-        }
-
-        importedImgs.push(await fileToDataURL(file));
-      }
-
-      store.add({
-        dx:item.dx||"Untitled",
-        one:item.one||"",
-        con:item.con||"",
-        note:item.note||"",
-        fav:item.fav||false,
-        imgs:importedImgs
-      });
-      count++;
-    }
-
-    tx.oncomplete=()=>loadAll(()=>{
-      hideLoading();
-      goHome();
-      alert(missing ? `Imported ${count} records. Missing images: ${missing}` : `Imported ${count} records successfully`);
-    });
-    tx.onerror=()=>{
-      hideLoading();
-      alert("Database error during import");
-    };
-
-  }catch(err){
-    console.error(err);
-    hideLoading();
-    alert("Import failed. Select backup.json and the image files from the unzipped backup.");
   }
 }
 
