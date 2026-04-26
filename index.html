@@ -310,6 +310,9 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
   <input id="importInput" class="hiddenInput" type="file" multiple accept=".zip,.json,.jpeg,.jpg,.png,image/jpeg,image/png,application/zip" onchange="importAll(event)">
+  <input id="importFolderInput" class="hiddenInput" type="file" multiple webkitdirectory directory onchange="importAll(event)">
+  <input id="importJsonStepInput" class="hiddenInput" type="file" accept=".json,application/json" onchange="startTwoStepJsonImport(event)">
+  <input id="importImagesStepInput" class="hiddenInput" type="file" multiple accept=".jpeg,.jpg,.png,image/jpeg,image/png" onchange="finishTwoStepImageImport(event)">
 </div>
 
 <div id="imgModal">
@@ -324,6 +327,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
 let db, data=[], deleted=[];
 let tempImage=[], currentIndex=null, currentImgIndex=null, currentMode="new";
 let selectMode=false, selectedIds=new Set();
+let pendingTwoStepImport=null;
 
 function applySavedTheme(){
   let theme=localStorage.getItem("theme") || "light";
@@ -763,8 +767,11 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Import backup.json plus image files</p></div>
         </div>
-        <div class="hint">ⓘ Select backup.json together with .jpeg/.jpg/.png images. All imported images will be converted and saved as JPEG.</div>
-        <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
+        <div class="hint">ⓘ For unzipped backup, use “Import Unzipped Folder”. For direct backup.zip or manually selected backup.json + images, use “Import Files”. All images are saved as JPEG.</div>
+        <button class="importBtn" onclick="$('importInput').click()">↥ Import Files / ZIP</button>
+        <button class="importBtn" style="margin-top:10px" onclick="$('importFolderInput').click()">↥ Import Unzipped Folder</button>
+        <button class="importBtn" style="margin-top:10px;background:#fff7ed;color:#c2410c;border-color:#fb923c" onclick="$('importJsonStepInput').click()">↥ iPhone Fix: Step 1 Select backup.json</button>
+        <button class="importBtn" style="margin-top:10px;background:#fff7ed;color:#c2410c;border-color:#fb923c" onclick="$('importImagesStepInput').click()">↥ iPhone Fix: Step 2 Select Images</button>
       </div>
     </div>
   `;
@@ -983,6 +990,42 @@ function cleanFileName(name){
 function imageBaseName(name){
   return cleanFileName(name).replace(/\.[^.]+$/,"");
 }
+function normalizePathKey(path){
+  return String(path||"").replace(/\\/g,"/").replace(/^\/+/,"").toLowerCase();
+}
+function pathWithoutTopFolder(path){
+  let parts=normalizePathKey(path).split("/").filter(Boolean);
+  if(parts.length>1) parts.shift();
+  return parts.join("/");
+}
+function addImageKeys(imageMap, key, obj){
+  let norm=normalizePathKey(key);
+  if(!norm) return;
+  let file=cleanFileName(norm);
+  let base=imageBaseName(file);
+
+  imageMap[norm]=obj;
+  imageMap[file]=obj;
+  imageMap[base]=obj;
+  imageMap[base+".jpeg"]=obj;
+  imageMap[base+".jpg"]=obj;
+  imageMap[base+".png"]=obj;
+
+  let noTop=pathWithoutTopFolder(norm);
+  if(noTop){
+    imageMap[noTop]=obj;
+    imageMap["images/"+file]=obj;
+  }
+}
+function findMappedImage(imageMap, ref){
+  let norm=normalizePathKey(ref);
+  let file=cleanFileName(norm);
+  let base=imageBaseName(file);
+  let noTop=pathWithoutTopFolder(norm);
+  return imageMap[norm] || imageMap[noTop] || imageMap[file] || imageMap[base] ||
+    imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"] ||
+    imageMap["images/"+file] || imageMap["backup/"+file] || null;
+}
 
 async function importAll(event){
   let files=Array.from(event.target.files||[]);
@@ -1043,24 +1086,21 @@ async function importFromZipFile(zipFile){
     if(entry.dir) continue;
 
     let clean=cleanFileName(entryName);
-    if(clean.endsWith(".json")) continue;
+    if(clean.endsWith(".json") || clean===".ds_store" || clean.startsWith("._")) continue;
 
     if(clean.endsWith(".jpeg") || clean.endsWith(".jpg") || clean.endsWith(".png")){
-      imageMap[clean]=entry;
-      imageMap[entryName.toLowerCase()]=entry;
+      addImageKeys(imageMap, entryName, entry);
     }else{
       ignored++;
     }
   }
 
   await saveParsedImport(parsed, async function(ref){
-    let clean=cleanFileName(ref);
-    let base=imageBaseName(clean);
-    let entry=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"];
+    let entry=findMappedImage(imageMap, ref);
     if(!entry) return null;
 
     let blob=await entry.async("blob");
-    return { blob:blob, name:cleanFileName(entry.name || clean) };
+    return { blob:blob, name:cleanFileName(entry.name || ref) };
   }, ignored);
 }
 
@@ -1090,24 +1130,22 @@ async function importFromSelectedFiles(files){
 
   files.forEach(f=>{
     let name=cleanFileName(f.name);
-    let rel=String(f.webkitRelativePath||"").toLowerCase();
-    if(name.endsWith(".json")) return;
+    let rel=normalizePathKey(f.webkitRelativePath||"");
+    if(name.endsWith(".json") || name===".ds_store" || name.startsWith("._")) return;
 
     if(name.endsWith(".jpeg") || name.endsWith(".jpg") || name.endsWith(".png")){
-      imageMap[name]=f;
-      if(rel) imageMap[rel]=f;
+      addImageKeys(imageMap, name, f);
+      if(rel) addImageKeys(imageMap, rel, f);
     }else{
       ignored++;
     }
   });
 
   await saveParsedImport(parsed, async function(ref){
-    let clean=cleanFileName(ref);
-    let base=imageBaseName(clean);
-    let file=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"];
+    let file=findMappedImage(imageMap, ref);
     if(!file) return null;
 
-    return { blob:file, name:cleanFileName(file.name || clean) };
+    return { blob:file, name:cleanFileName(file.name || ref) };
   }, ignored);
 }
 
@@ -1119,6 +1157,9 @@ async function saveParsedImport(parsed, getImage, ignored){
   let matched=0;
   let converted=0;
   let missing=0;
+  let missingRefs=[];
+
+  let flatIndex=0;
 
   for(let item of parsed.data){
     let imgs=[];
@@ -1132,10 +1173,12 @@ async function saveParsedImport(parsed, getImage, ignored){
         continue;
       }
 
-      let found=await getImage(ref);
+      let found=await getImage(ref, flatIndex);
+      flatIndex++;
 
       if(!found){
         missing++;
+        if(missingRefs.length<5) missingRefs.push(String(ref||"unknown"));
         continue;
       }
 
@@ -1161,7 +1204,7 @@ async function saveParsedImport(parsed, getImage, ignored){
     hideLoading();
     goHome();
     let msg='Imported '+count+' records\nMatched images: '+matched+'\nNon-JPEG converted to JPEG: '+converted;
-    if(missing) msg += '\nMissing images: '+missing;
+    if(missing) msg += '\nMissing images: '+missing+'\nExample missing: '+missingRefs.join(', ');
     if(ignored) msg += '\nIgnored non-image files: '+ignored;
     alert(msg);
   });
@@ -1171,6 +1214,67 @@ async function saveParsedImport(parsed, getImage, ignored){
     alert("Database error during import");
   };
 }
+
+async function startTwoStepJsonImport(event){
+  let files=Array.from(event.target.files||[]);
+  event.target.value="";
+  if(!files.length){ alert("No JSON selected"); return; }
+  showLoading();
+  try{
+    let jsonFile=files.find(f=>cleanFileName(f.name).endsWith(".json"));
+    if(!jsonFile){ hideLoading(); alert("Please select backup.json first"); return; }
+    let parsed=JSON.parse(await jsonFile.text());
+    if(!parsed.data || !Array.isArray(parsed.data)){ hideLoading(); alert("Invalid backup.json"); return; }
+    pendingTwoStepImport=parsed;
+    hideLoading();
+    alert("Step 1 OK. Now tap Step 2 and select the image files from the unzipped backup folder.");
+  }catch(err){ console.error(err); hideLoading(); alert("Could not read backup.json"); }
+}
+
+async function finishTwoStepImageImport(event){
+  let files=Array.from(event.target.files||[]);
+  event.target.value="";
+  if(!pendingTwoStepImport){ alert("Please do Step 1 first: select backup.json."); return; }
+  if(!files.length){ alert("No images selected"); return; }
+  showLoading();
+  try{
+    await importFromSelectedFilesWithParsed(pendingTwoStepImport, files, true);
+    pendingTwoStepImport=null;
+  }catch(err){ console.error(err); hideLoading(); alert("Image import failed. Make sure you selected .jpeg/.jpg/.png files from the same unzipped backup."); }
+}
+
+async function importFromSelectedFilesWithParsed(parsed, files, useIndexFallback=false){
+  let imageMap={};
+  let imageList=[];
+  let ignored=0;
+  files.forEach(f=>{
+    let name=cleanFileName(f.name);
+    let rel=normalizePathKey(f.webkitRelativePath||"");
+    if(name.endsWith(".json") || name===".ds_store" || name.startsWith("._")) return;
+    if(name.endsWith(".jpeg") || name.endsWith(".jpg") || name.endsWith(".png")){
+      addImageKeys(imageMap, name, f);
+      if(rel) addImageKeys(imageMap, rel, f);
+      imageList.push(f);
+    }else ignored++;
+  });
+  imageList.sort((a,b)=>cleanFileName(a.name).localeCompare(cleanFileName(b.name), undefined, {numeric:true}));
+  let usedFallback=new Set();
+  await saveParsedImport(parsed, async function(ref, flatIndex){
+    let file=findMappedImage(imageMap, ref);
+    if(file) return { blob:file, name:cleanFileName(file.name || ref) };
+    if(useIndexFallback && imageList.length){
+      for(let i=0;i<imageList.length;i++){
+        if(!usedFallback.has(i)){
+          usedFallback.add(i);
+          let f=imageList[i];
+          return { blob:f, name:cleanFileName(f.name || ref) };
+        }
+      }
+    }
+    return null;
+  }, ignored);
+}
+
 
 // Keep this name only for older buttons/cached PWA versions.
 async function importFolderOnly(event){
