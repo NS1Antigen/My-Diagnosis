@@ -310,7 +310,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
   
-  <input id="folderInput" class="hiddenInput" type="file" multiple webkitdirectory directory onchange="importFolderBackup(event)">
+  <input id="folderInput" class="hiddenInput" type="file" multiple onchange="importFolderBackup(event)">
 </div>
 
 <div id="imgModal">
@@ -764,7 +764,7 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Load data from your backup folder</p></div>
         </div>
-        <div class="hint">ⓘ Unzip your backup first. Open/select the unzipped backup folder, then press Open/Upload. The folder should contain backup.json and an images folder. PNG/JPG both work. It should contain backup.json and the images folder. PNG/JPG both work. PNG/JPG both work.</div>
+        <div class="hint">ⓘ Unzip your backup first. Go inside the unzipped backup folder, then press Open/Upload. The app will look for backup.json and image files from that selection. PNG/JPG both work. It should contain backup.json and the images folder. PNG/JPG both work. PNG/JPG both work.</div>
         <button class="importBtn" onclick="$('folderInput').click()">↥ Import</button>
       </div>
     </div>
@@ -843,19 +843,24 @@ function findImageFile(imageMap, imgRef){
 async function importFolderBackup(event){
   let files=Array.from(event.target.files||[]);
   event.target.value="";
-  if(!files.length) return;
+
+  if(!files.length){
+    alert("No files selected");
+    return;
+  }
 
   showLoading();
 
   try{
     let jsonFile=files.find(f=>{
       let rel=f.webkitRelativePath || "";
-      return f.name==="backup.json" || rel.endsWith("/backup.json");
+      let name=f.name || "";
+      return name==="backup.json" || name.toLowerCase().endsWith(".json") || rel.endsWith("/backup.json");
     });
 
     if(!jsonFile){
       hideLoading();
-      alert("No backup.json found. Please select/open the unzipped backup folder.");
+      alert("No backup.json found. Open the unzipped backup folder and select/upload backup.json with the image files.");
       return;
     }
 
@@ -947,7 +952,7 @@ async function importFolderBackup(event){
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Folder import failed. Please select/open the unzipped backup folder.");
+    alert("Import failed. Open the unzipped backup folder and select/upload backup.json with the image files.");
   }
 }
 
