@@ -309,7 +309,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     </div>
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
-  <input id="importInput" class="hiddenInput" type="file" multiple webkitdirectory directory onchange="importFolderOnly(event)">
+  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,.png,image/jpeg,image/png" onchange="importFolderOnly(event)">
 </div>
 
 <div id="imgModal">
@@ -761,9 +761,9 @@ function renderTransfer(){
       <div class="transferCard">
         <div class="transferCardHead">
           <div class="squareIcon import">↥</div>
-          <div><h3>Import</h3><p>Import an unzipped backup folder</p></div>
+          <div><h3>Import</h3><p>Import backup.json plus image files</p></div>
         </div>
-        <div class="hint">ⓘ Select the unzipped backup folder. It should contain backup.json and image files (.jpg/.jpeg/.png) in the same folder.</div>
+        <div class="hint">ⓘ Select backup.json together with the image files (.jpg/.jpeg/.png). You can also select all files from an unzipped backup folder.</div>
         <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
       </div>
     </div>
@@ -1048,7 +1048,7 @@ async function importFolderOnly(event){
   event.target.value="";
 
   if(!files.length){
-    alert("No folder selected");
+    alert("No files selected");
     return;
   }
 
@@ -1063,7 +1063,7 @@ async function importFolderOnly(event){
 
     if(!jsonFile){
       hideLoading();
-      alert("backup.json not found. Please select the unzipped backup folder.");
+      alert("backup.json not found. Please select backup.json together with JPEG/JPG/PNG images.");
       return;
     }
 
@@ -1150,7 +1150,7 @@ async function importFolderOnly(event){
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Folder import failed");
+    alert("Import failed. Select backup.json together with JPEG/JPG/PNG images.");
   }
 }
 
