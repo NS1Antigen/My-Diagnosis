@@ -309,7 +309,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     </div>
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
-  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,.png" onchange="importAll(event)">
+  <input id="importInput" class="hiddenInput" type="file" multiple webkitdirectory directory onchange="importFolderOnly(event)">
 </div>
 
 <div id="imgModal">
@@ -761,9 +761,9 @@ function renderTransfer(){
       <div class="transferCard">
         <div class="transferCardHead">
           <div class="squareIcon import">↥</div>
-          <div><h3>Import</h3><p>Import backup.json + JPEG images</p></div>
+          <div><h3>Import</h3><p>Import an unzipped backup folder</p></div>
         </div>
-        <div class="hint">ⓘ After unzip, select backup.json and all image files (.jpg/.jpeg/.png) together from the same folder.</div>
+        <div class="hint">ⓘ Select the unzipped backup folder. It should contain backup.json and image files (.jpg/.jpeg/.png) in the same folder.</div>
         <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
       </div>
     </div>
@@ -1033,6 +1033,117 @@ async function importAll(event){
   }
 }
 
+
+async function importFolderOnly(event){
+  let files=Array.from(event.target.files||[]);
+  event.target.value="";
+
+  if(!files.length){
+    alert("No folder selected");
+    return;
+  }
+
+  showLoading();
+
+  try{
+    let jsonFile=files.find(f=>{
+      let name=String(f.name||"").toLowerCase();
+      let rel=String(f.webkitRelativePath||"").toLowerCase();
+      return name==="backup.json" || rel.endsWith("/backup.json");
+    });
+
+    if(!jsonFile){
+      hideLoading();
+      alert("backup.json not found. Please select the unzipped backup folder.");
+      return;
+    }
+
+    let parsed=JSON.parse(await jsonFile.text());
+
+    if(!parsed.data || !Array.isArray(parsed.data)){
+      hideLoading();
+      alert("Invalid backup.json");
+      return;
+    }
+
+    let imageMap={};
+
+    files.forEach(f=>{
+      let name=String(f.name||"").split("/").pop().toLowerCase();
+
+      if(name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")){
+        imageMap[name]=f;
+      }
+    });
+
+    let tx=db.transaction("data","readwrite");
+    let store=tx.objectStore("data");
+
+    let count=0;
+    let matched=0;
+    let missing=0;
+
+    for(let item of parsed.data){
+      let imgs=[];
+
+      for(let ref of (item.imgs||[])){
+        if(typeof ref==="string" && ref.startsWith("data:image")){
+          imgs.push(ref);
+          matched++;
+          continue;
+        }
+
+        let clean=String(ref||"").split("/").pop().toLowerCase();
+        let base=clean.replace(/\.[^.]+$/,"");
+
+        let file =
+          imageMap[clean] ||
+          imageMap[base+".jpg"] ||
+          imageMap[base+".jpeg"] ||
+          imageMap[base+".png"];
+
+        if(!file){
+          missing++;
+          continue;
+        }
+
+        imgs.push(await fileToDataURL(file));
+        matched++;
+      }
+
+      store.add({
+        dx:item.dx || "Untitled",
+        one:item.one || "",
+        con:item.con || "",
+        note:item.note || "",
+        fav:item.fav || false,
+        imgs:imgs
+      });
+
+      count++;
+    }
+
+    tx.oncomplete=()=>loadAll(()=>{
+      hideLoading();
+      goHome();
+      alert(
+        missing
+        ? `Imported ${count} records\nMatched images: ${matched}\nMissing images: ${missing}`
+        : `Imported ${count} records with images successfully`
+      );
+    });
+
+    tx.onerror=()=>{
+      hideLoading();
+      alert("Database error during import");
+    };
+
+  }catch(err){
+    console.error(err);
+    hideLoading();
+    alert("Folder import failed");
+  }
+}
 
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("service-worker.js");
