@@ -309,7 +309,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     </div>
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
-  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg" onchange="importAll(event)">
+  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,.png" onchange="importAll(event)">
 </div>
 
 <div id="imgModal">
@@ -763,7 +763,7 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Import backup.json + JPEG images</p></div>
         </div>
-        <div class="hint">ⓘ After unzip, select backup.json and all img_*.jpg/.jpeg files together from the same folder.</div>
+        <div class="hint">ⓘ After unzip, select backup.json and all image files (.jpg/.jpeg/.png) together from the same folder.</div>
         <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
       </div>
     </div>
