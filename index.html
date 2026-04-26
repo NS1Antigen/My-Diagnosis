@@ -755,7 +755,7 @@ function renderTransfer(){
           <div class="squareIcon export">⇩</div>
           <div><h3>Export</h3><p>Download backup file</p></div>
         </div>
-        <div class="hint">ⓘ Exports a backup file containing backup.json and attached images. On iPhone/iPad, unzip it before importing.</div>
+        <div class="hint">ⓘ Exports a backup file. After unzip, backup.json and all JPEG images will be in the same folder for easier iPad import.</div>
         <button class="exportBtn" onclick="exportJSON()">⇩ Export ${data.length} Record(s)</button>
       </div>
       <div class="transferCard">
@@ -763,7 +763,7 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Import backup.json + JPEG images</p></div>
         </div>
-        <div class="hint">ⓘ Unzip your backup first. Go inside the unzipped folder, select backup.json together with all .jpg/.jpeg image files, then press Open/Upload.</div>
+        <div class="hint">ⓘ After unzip, select backup.json and all img_*.jpg/.jpeg files together from the same folder.</div>
         <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
       </div>
     </div>
@@ -774,32 +774,57 @@ async function exportJSON(){
   showLoading();
   try{
     let zip=new JSZip();
-    let imgFolder=zip.folder("images");
     let exportData=[];
+
     for(let i=0;i<data.length;i++){
-      let d=data[i], imgNames=[], imgs=d.imgs||[];
+      let d=data[i];
+      let imgNames=[];
+      let imgs=d.imgs||[];
+
       for(let j=0;j<imgs.length;j++){
         let name=`img_${i}_${j}.jpg`;
         imgNames.push(name);
+
         let res=await fetch(imgs[j]);
         let blob=await res.blob();
-        imgFolder.file(name,blob);
+
+        // IMPORTANT: images are saved at ZIP root level, not inside images/
+        // After unzip: backup.json and img_0_0.jpg are in the same folder.
+        zip.file(name, blob);
       }
-      exportData.push({dx:d.dx,one:d.one,con:d.con,note:d.note,fav:d.fav||false,imgs:imgNames});
+
+      exportData.push({
+        dx:d.dx,
+        one:d.one,
+        con:d.con,
+        note:d.note,
+        fav:d.fav||false,
+        imgs:imgNames
+      });
     }
+
     zip.file("backup.json",JSON.stringify({data:exportData,deleted:[]},null,2));
-    let content=await zip.generateAsync({type:"blob",compression:"DEFLATE",compressionOptions:{level:3}});
+
+    let content=await zip.generateAsync({
+      type:"blob",
+      compression:"DEFLATE",
+      compressionOptions:{level:3}
+    });
+
     let a=document.createElement("a");
     a.href=URL.createObjectURL(content);
     a.download="backup.zip";
     a.click();
     URL.revokeObjectURL(a.href);
+
   }catch(err){
     console.error(err);
     alert("Export failed");
   }
   hideLoading();
 }
+
+
 
 
 
