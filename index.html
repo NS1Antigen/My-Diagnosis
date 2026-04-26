@@ -261,6 +261,7 @@ body.dark .themeToggle{background:rgba(15,23,42,.65)}
 }
 .toolbarBtn.danger{color:#ef4444}
 .toolbarBtn.fillDanger{background:#ef4444;color:white;border-color:#ef4444}
+.toolbarBtn.theme{min-width:46px;font-size:18px}
 .selectCircle{
   position:absolute;
   right:18px;
@@ -309,7 +310,6 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
 
-  <button id="themeToggle" class="themeToggle" onclick="toggleTheme()">🌙</button>
   <input id="importInput" class="hiddenInput" type="file" accept=".zip,application/zip" onchange="importZip(event)">
   <input id="folderInput" class="hiddenInput" type="file" multiple webkitdirectory onchange="importFolderBackup(event)">
   <input id="backupFilesInput" class="hiddenInput" type="file" multiple accept=".json,.jpg,.jpeg,.png,image/*" onchange="importBackupFiles(event)">
@@ -331,14 +331,15 @@ let selectMode=false, selectedIds=new Set();
 function applySavedTheme(){
   let theme=localStorage.getItem("theme") || "light";
   document.body.classList.toggle("dark", theme==="dark");
-  let btn=document.getElementById("themeToggle");
-  if(btn) btn.textContent = theme==="dark" ? "☀️" : "🌙";
+}
+function themeIcon(){
+  return document.body.classList.contains("dark") ? "☀️" : "🌙";
 }
 function toggleTheme(){
   let dark=!document.body.classList.contains("dark");
-  document.body.classList.toggle("dark", dark);
   localStorage.setItem("theme", dark ? "dark" : "light");
   applySavedTheme();
+  renderHome();
 }
 applySavedTheme();
 
@@ -417,10 +418,14 @@ function renderHome(){
         selectMode ? `
           <button class="toolbarBtn" onclick="cancelSelectMode()">Cancel</button>
           <button class="toolbarBtn" onclick="toggleSelectAll()">${selectedIds.size===data.length ? "Unselect all" : "Select all"}</button>
+          <button class="toolbarBtn theme" onclick="toggleTheme()">${themeIcon()}</button>
           <button class="toolbarBtn fillDanger" onclick="deleteSelected()">Delete (${selectedIds.size})</button>
         ` : `
           <span></span>
-          <button class="toolbarBtn" onclick="enterSelectMode()">Select</button>
+          <div style="display:flex;gap:8px">
+            <button class="toolbarBtn theme" onclick="toggleTheme()">${themeIcon()}</button>
+            <button class="toolbarBtn" onclick="enterSelectMode()">Select</button>
+          </div>
         `
       }
     </div>
@@ -761,7 +766,7 @@ function renderTransfer(){
           <div class="squareIcon import">↥</div>
           <div><h3>Import</h3><p>Load data from your backup folder</p></div>
         </div>
-        <div class="hint">ⓘ On iPhone/iPad: unzip your backup first, then select backup.json together with all image files from the images folder.</div>
+        <div class="hint">ⓘ Unzip your backup first, then select backup.json together with all image files from the images folder. PNG/JPG both work.</div>
         <button class="importBtn" onclick="$('backupFilesInput').click()">↥ Import</button>
       </div>
     </div>
@@ -810,6 +815,24 @@ function fileToDataURL(file){
 }
 
 
+
+function findImageFile(imageMap, imgRef){
+  let ref=String(imgRef||"");
+  let clean=ref.split("/").pop();
+  let base=clean.replace(/\.[^.]+$/,"");
+
+  return imageMap[ref] ||
+         imageMap["images/"+ref] ||
+         imageMap[clean] ||
+         imageMap[base+".jpg"] ||
+         imageMap[base+".jpeg"] ||
+         imageMap[base+".png"] ||
+         imageMap["images/"+base+".jpg"] ||
+         imageMap["images/"+base+".jpeg"] ||
+         imageMap["images/"+base+".png"] ||
+         null;
+}
+
 async function importBackupFiles(event){
   let files=Array.from(event.target.files||[]);
   event.target.value="";
@@ -854,8 +877,7 @@ async function importBackupFiles(event){
           continue;
         }
 
-        let cleanName=String(imgRef).split("/").pop();
-        let file=imageMap[imgRef] || imageMap["images/"+imgRef] || imageMap[cleanName];
+        let file=findImageFile(imageMap, imgRef);
 
         if(!file){
           missing++;
@@ -927,7 +949,7 @@ async function importFolderBackup(event){
     for(let item of parsed.data){
       let importedImgs=[];
       for(let name of (item.imgs||[])){
-        let file=imageMap[name] || imageMap["images/"+name] || imageMap[name.split("/").pop()];
+        let file=findImageFile(imageMap, name);
         if(!file){ missing++; continue; }
         importedImgs.push(await fileToDataURL(file));
       }
