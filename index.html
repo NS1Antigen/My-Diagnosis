@@ -309,7 +309,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     </div>
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
-  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpeg,.jpg,.png,image/jpeg,image/png" onchange="importAll(event)">
+  <input id="importInput" class="hiddenInput" type="file" multiple accept=".zip,.json,.jpeg,.jpg,.png,image/jpeg,image/png,application/zip" onchange="importAll(event)">
 </div>
 
 <div id="imgModal">
@@ -996,111 +996,180 @@ async function importAll(event){
   showLoading();
 
   try{
-    let jsonFile=files.find(f=>{
-      let name=cleanFileName(f.name);
-      let rel=String(f.webkitRelativePath||"").toLowerCase();
-      return name==="backup.json" || rel.endsWith("/backup.json") || name.endsWith(".json");
-    });
+    let zipFile=files.find(f=>cleanFileName(f.name).endsWith(".zip"));
 
-    if(!jsonFile){
-      hideLoading();
-      alert("Please select backup.json together with .jpeg/.jpg/.png images. Images will be saved as JPEG.");
+    if(zipFile){
+      await importFromZipFile(zipFile);
       return;
     }
 
-    let parsed=JSON.parse(await jsonFile.text());
-
-    if(!parsed.data || !Array.isArray(parsed.data)){
-      hideLoading();
-      alert("Invalid backup.json");
-      return;
-    }
-
-    let imageMap={};
-    let ignored=0;
-
-    files.forEach(f=>{
-      let name=cleanFileName(f.name);
-      if(name.endsWith(".json")) return;
-
-      // Accept common image extensions by filename, not file.type, because iPad Files can report a wrong/empty MIME type.
-      // All accepted images will be converted and saved as JPEG internally.
-      if(name.endsWith(".jpeg") || name.endsWith(".jpg") || name.endsWith(".png")){
-        imageMap[name]=f;
-      }else{
-        ignored++;
-      }
-    });
-
-    let tx=db.transaction("data","readwrite");
-    let store=tx.objectStore("data");
-
-    let count=0;
-    let matched=0;
-    let converted=0;
-    let missing=0;
-
-    for(let item of parsed.data){
-      let imgs=[];
-
-      for(let ref of (item.imgs||[])){
-        if(typeof ref==="string" && ref.startsWith("data:image")){
-          let before=ref.startsWith("data:image/png") || ref.startsWith("data:image/jpg");
-          imgs.push(await dataUrlOrFileToJpegDataURL(ref));
-          matched++;
-          if(before) converted++;
-          continue;
-        }
-
-        let clean=cleanFileName(ref);
-        let base=imageBaseName(clean);
-
-        // Match exact name, or match the same base name across .jpeg/.jpg/.png.
-        // This fixes backup.json refs like img_3_0.jpg when the selected file is img_3_0.jpeg.
-        let file=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"];
-
-        if(!file){
-          missing++;
-          continue;
-        }
-
-        let fileName=cleanFileName(file.name);
-        imgs.push(await dataUrlOrFileToJpegDataURL(file));
-        matched++;
-        if(fileName.endsWith(".png") || fileName.endsWith(".jpg")) converted++;
-      }
-
-      store.add({
-        dx:item.dx || "Untitled",
-        one:item.one || "",
-        con:item.con || "",
-        note:item.note || "",
-        fav:item.fav || false,
-        imgs:imgs
-      });
-
-      count++;
-    }
-
-    tx.oncomplete=()=>loadAll(()=>{
-      hideLoading();
-      goHome();
-      let msg=`Imported ${count} records\nMatched images: ${matched}\nNon-JPEG converted to JPEG: ${converted}`;
-      if(missing) msg += `\nMissing images: ${missing}`;
-      if(ignored) msg += `\nIgnored non-image files: ${ignored}`;
-      alert(msg);
-    });
-
-    tx.onerror=()=>{
-      hideLoading();
-      alert("Database error during import");
-    };
+    await importFromSelectedFiles(files);
 
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Import failed. Select backup.json with .jpeg/.jpg/.png images. Images will be saved as JPEG.");
+    alert("Import failed. You can import backup.zip directly, or select backup.json together with the image files.");
   }
+}
+
+async function importFromZipFile(zipFile){
+  let zip=await JSZip.loadAsync(zipFile);
+  let entries=Object.keys(zip.files);
+
+  let jsonName=entries.find(name=>{
+    let clean=cleanFileName(name);
+    return clean==="backup.json" || clean.endsWith(".json");
+  });
+
+  if(!jsonName){
+    hideLoading();
+    alert("backup.json not found inside the ZIP file");
+    return;
+  }
+
+  let parsed=JSON.parse(await zip.files[jsonName].async("string"));
+
+  if(!parsed.data || !Array.isArray(parsed.data)){
+    hideLoading();
+    alert("Invalid backup.json inside ZIP");
+    return;
+  }
+
+  let imageMap={};
+  let ignored=0;
+
+  for(let entryName of entries){
+    let entry=zip.files[entryName];
+    if(entry.dir) continue;
+
+    let clean=cleanFileName(entryName);
+    if(clean.endsWith(".json")) continue;
+
+    if(clean.endsWith(".jpeg") || clean.endsWith(".jpg") || clean.endsWith(".png")){
+      imageMap[clean]=entry;
+      imageMap[entryName.toLowerCase()]=entry;
+    }else{
+      ignored++;
+    }
+  }
+
+  await saveParsedImport(parsed, async function(ref){
+    let clean=cleanFileName(ref);
+    let base=imageBaseName(clean);
+    let entry=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"];
+    if(!entry) return null;
+
+    let blob=await entry.async("blob");
+    return { blob:blob, name:cleanFileName(entry.name || clean) };
+  }, ignored);
+}
+
+async function importFromSelectedFiles(files){
+  let jsonFile=files.find(f=>{
+    let name=cleanFileName(f.name);
+    let rel=String(f.webkitRelativePath||"").toLowerCase();
+    return name==="backup.json" || rel.endsWith("/backup.json") || name.endsWith(".json");
+  });
+
+  if(!jsonFile){
+    hideLoading();
+    alert("Please select backup.zip OR select backup.json together with .jpeg/.jpg/.png images.");
+    return;
+  }
+
+  let parsed=JSON.parse(await jsonFile.text());
+
+  if(!parsed.data || !Array.isArray(parsed.data)){
+    hideLoading();
+    alert("Invalid backup.json");
+    return;
+  }
+
+  let imageMap={};
+  let ignored=0;
+
+  files.forEach(f=>{
+    let name=cleanFileName(f.name);
+    let rel=String(f.webkitRelativePath||"").toLowerCase();
+    if(name.endsWith(".json")) return;
+
+    if(name.endsWith(".jpeg") || name.endsWith(".jpg") || name.endsWith(".png")){
+      imageMap[name]=f;
+      if(rel) imageMap[rel]=f;
+    }else{
+      ignored++;
+    }
+  });
+
+  await saveParsedImport(parsed, async function(ref){
+    let clean=cleanFileName(ref);
+    let base=imageBaseName(clean);
+    let file=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"];
+    if(!file) return null;
+
+    return { blob:file, name:cleanFileName(file.name || clean) };
+  }, ignored);
+}
+
+async function saveParsedImport(parsed, getImage, ignored){
+  let tx=db.transaction("data","readwrite");
+  let store=tx.objectStore("data");
+
+  let count=0;
+  let matched=0;
+  let converted=0;
+  let missing=0;
+
+  for(let item of parsed.data){
+    let imgs=[];
+
+    for(let ref of (item.imgs||[])){
+      if(typeof ref==="string" && ref.startsWith("data:image")){
+        let before=ref.startsWith("data:image/png") || ref.startsWith("data:image/jpg");
+        imgs.push(await dataUrlOrFileToJpegDataURL(ref));
+        matched++;
+        if(before) converted++;
+        continue;
+      }
+
+      let found=await getImage(ref);
+
+      if(!found){
+        missing++;
+        continue;
+      }
+
+      imgs.push(await dataUrlOrFileToJpegDataURL(found.blob));
+      matched++;
+      let nm=cleanFileName(found.name || "");
+      if(nm.endsWith(".png") || nm.endsWith(".jpg")) converted++;
+    }
+
+    store.add({
+      dx:item.dx || "Untitled",
+      one:item.one || "",
+      con:item.con || "",
+      note:item.note || "",
+      fav:item.fav || false,
+      imgs:imgs
+    });
+
+    count++;
+  }
+
+  tx.oncomplete=()=>loadAll(()=>{
+    hideLoading();
+    goHome();
+    let msg='Imported '+count+' records\nMatched images: '+matched+'\nNon-JPEG converted to JPEG: '+converted;
+    if(missing) msg += '\nMissing images: '+missing;
+    if(ignored) msg += '\nIgnored non-image files: '+ignored;
+    alert(msg);
+  });
+
+  tx.onerror=()=>{
+    hideLoading();
+    alert("Database error during import");
+  };
 }
 
 // Keep this name only for older buttons/cached PWA versions.
