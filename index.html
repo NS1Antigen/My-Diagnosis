@@ -309,7 +309,7 @@ body.dark .selectCircle{background:#1f2937;border-color:#334155}
     </div>
     <button class="navItem" id="navTransfer" onclick="goTransfer()"><div class="navIcon">⇪</div><div>Transfer</div></button>
   </div>
-  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpeg,.png,image/jpeg,image/png" onchange="importAll(event)">
+  <input id="importInput" class="hiddenInput" type="file" multiple accept=".json,.jpeg,.jpg,.png,image/jpeg,image/png" onchange="importAll(event)">
 </div>
 
 <div id="imgModal">
@@ -761,9 +761,9 @@ function renderTransfer(){
       <div class="transferCard">
         <div class="transferCardHead">
           <div class="squareIcon import">↥</div>
-          <div><h3>Import</h3><p>Import backup.json plus JPEG/PNG files</p></div>
+          <div><h3>Import</h3><p>Import backup.json plus image files</p></div>
         </div>
-        <div class="hint">ⓘ Select backup.json together with .jpeg images. PNG images can also be selected and will be converted to JPEG during import. JPG files are ignored.</div>
+        <div class="hint">ⓘ Select backup.json together with .jpeg/.jpg/.png images. All imported images will be converted and saved as JPEG.</div>
         <button class="importBtn" onclick="$('importInput').click()">↥ Import</button>
       </div>
     </div>
@@ -1004,7 +1004,7 @@ async function importAll(event){
 
     if(!jsonFile){
       hideLoading();
-      alert("Please select backup.json together with .jpeg images. PNG is allowed and will convert to JPEG.");
+      alert("Please select backup.json together with .jpeg/.jpg/.png images. Images will be saved as JPEG.");
       return;
     }
 
@@ -1023,9 +1023,9 @@ async function importAll(event){
       let name=cleanFileName(f.name);
       if(name.endsWith(".json")) return;
 
-      // Strict rule: accept .jpeg and .png only.
-      // PNG will be converted to JPEG before saving. JPG is ignored.
-      if(name.endsWith(".jpeg") || name.endsWith(".png")){
+      // Accept common image extensions by filename, not file.type, because iPad Files can report a wrong/empty MIME type.
+      // All accepted images will be converted and saved as JPEG internally.
+      if(name.endsWith(".jpeg") || name.endsWith(".jpg") || name.endsWith(".png")){
         imageMap[name]=f;
       }else{
         ignored++;
@@ -1045,7 +1045,7 @@ async function importAll(event){
 
       for(let ref of (item.imgs||[])){
         if(typeof ref==="string" && ref.startsWith("data:image")){
-          let before=ref.startsWith("data:image/png");
+          let before=ref.startsWith("data:image/png") || ref.startsWith("data:image/jpg");
           imgs.push(await dataUrlOrFileToJpegDataURL(ref));
           matched++;
           if(before) converted++;
@@ -1055,9 +1055,9 @@ async function importAll(event){
         let clean=cleanFileName(ref);
         let base=imageBaseName(clean);
 
-        // Match exact .jpeg/.png, or match same base name as .jpeg/.png.
-        // This fixes old backup.json refs like img_3_0.jpg when the selected file is img_3_0.jpeg.
-        let file=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".png"];
+        // Match exact name, or match the same base name across .jpeg/.jpg/.png.
+        // This fixes backup.json refs like img_3_0.jpg when the selected file is img_3_0.jpeg.
+        let file=imageMap[clean] || imageMap[base+".jpeg"] || imageMap[base+".jpg"] || imageMap[base+".png"];
 
         if(!file){
           missing++;
@@ -1067,7 +1067,7 @@ async function importAll(event){
         let fileName=cleanFileName(file.name);
         imgs.push(await dataUrlOrFileToJpegDataURL(file));
         matched++;
-        if(fileName.endsWith(".png")) converted++;
+        if(fileName.endsWith(".png") || fileName.endsWith(".jpg")) converted++;
       }
 
       store.add({
@@ -1085,9 +1085,9 @@ async function importAll(event){
     tx.oncomplete=()=>loadAll(()=>{
       hideLoading();
       goHome();
-      let msg=`Imported ${count} records\nMatched images: ${matched}\nPNG converted to JPEG: ${converted}`;
+      let msg=`Imported ${count} records\nMatched images: ${matched}\nNon-JPEG converted to JPEG: ${converted}`;
       if(missing) msg += `\nMissing images: ${missing}`;
-      if(ignored) msg += `\nIgnored non-JPEG/PNG files: ${ignored}`;
+      if(ignored) msg += `\nIgnored non-image files: ${ignored}`;
       alert(msg);
     });
 
@@ -1099,7 +1099,7 @@ async function importAll(event){
   }catch(err){
     console.error(err);
     hideLoading();
-    alert("Import failed. Select backup.json with .jpeg images. PNG can be selected and will convert to JPEG.");
+    alert("Import failed. Select backup.json with .jpeg/.jpg/.png images. Images will be saved as JPEG.");
   }
 }
 
